@@ -6,7 +6,6 @@
 
 ## Learning from old forecasts
 
-The trick is to compare what forecasts *said* with what the sky *did*. For almost four years of hours, the model looks at the forecast that was made for Uppsala and at how cloudy it really was at SMHI's weather station at Uppsala Airport. From that it learns the forecast's habits, for example when it is usually too gloomy or too optimistic.
 
 ![Old forecasts and SMHI observations train the model, which then corrects today's forecast](presentation/learning-from-forecasts.svg)
 
@@ -27,6 +26,3 @@ A separate model, trained on what SMHI's station reported (rain, snow, sleet or 
 
 Weather icons: Yr/NRK, CC BY 4.0. Forecast data: Open-Meteo. Observations: SMHI. Map: © OpenStreetMap contributors.
 
----
-
-*The majority of text in this README was AI-generated.*
