@@ -296,6 +296,13 @@
       color: var(--muted);
     }
 
+    #forecastStatus {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -365,6 +372,19 @@
       height: 20px;
     }
 
+    .repo-link {
+      margin-left: auto;
+      align-self: center;
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .repo-link:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
     @media (max-width: 960px) {
       .layout,
       .model-grid {
@@ -382,6 +402,7 @@
       <button id="tabForecast" type="button" role="tab" aria-selected="true">Prognos</button>
       <button id="tabPerf" type="button" role="tab" aria-selected="false">Uppföljning</button>
       <button id="tabModel" type="button" role="tab" aria-selected="false">Modell</button>
+      <a class="repo-link" href="https://github.com/tyckeckse/skysightsign" target="_blank" rel="noopener noreferrer">GitHub</a>
     </div>
     <section id="viewModel" class="panel" hidden>
       <h2 class="forecast-title">Aktiv modell</h2>
@@ -392,20 +413,20 @@
     </section>
     <section id="viewPerf" class="panel" hidden>
       <h2 class="forecast-title">Modell mot Open-Meteo, facit: SMHI Uppsala Flygplats</h2>
-      <p class="perf-note">Medelfel i molnighet (procentenheter, lägre är bättre), dagtimmar de senaste 7 dagarna. Klicka på en dag för att se felet timme för timme i senaste prognosen.</p>
+      <p class="perf-note">Medelfel i molnighet (procentenheter), dagtimmar de senaste 7 dagarna. Klicka på en dag för att se felet timme för timme i senaste prognosen.</p>
       <div id="perfStatus" class="forecast-status"></div>
       <div id="perfSummary" class="perf-summary"></div>
       <table class="perf-table" aria-label="Per dag">
-        <thead><tr><th>Dag</th><th>Uppmätt</th><th>Vår modell</th><th>Open-Meteo</th><th>SMHI</th></tr></thead>
+        <thead><tr><th>Dag</th><th>Uppmätt</th><th>Skysightsign</th><th>Open-Meteo</th><th>SMHI</th></tr></thead>
         <tbody id="perfDay"></tbody>
       </table>
       <div class="daily-wrap">
         <h3 class="daily-title">Nederbörd (senaste 7 dagarna)</h3>
-        <p class="perf-note">Andel rätt nederbördstyp (Uppehåll / Regn / Snö / Snöblandat) mot SMHI Rådande väder, dygnet runt (högre är bättre). Klicka på en dag för att se senaste prognosen timme för timme.</p>
+        <p class="perf-note">Andel rätt nederbördstyp (Uppehåll / Regn / Snö / Snöblandat) mot SMHI Rådande väder, dygnet runt. Klicka på en dag för att se senaste prognosen timme för timme.</p>
         <div id="perfPrecipStatus" class="forecast-status"></div>
         <div id="perfPrecipSummary" class="perf-summary"></div>
         <table class="perf-table" aria-label="Nederbörd per dag">
-          <thead><tr><th>Dag</th><th>Uppmätt</th><th>Vår modell</th><th>Open-Meteo</th><th>SMHI</th></tr></thead>
+          <thead><tr><th>Dag</th><th>Uppmätt</th><th>Skysightsign</th><th>Open-Meteo</th><th>SMHI</th></tr></thead>
           <tbody id="perfPrecipDay"></tbody>
         </table>
       </div>
@@ -430,6 +451,7 @@
         <h2 class="forecast-title">Uppsala kommande 24h</h2>
         <div id="forecastStatus" class="forecast-status">
           <div id="forecastUpdated"></div>
+          <div id="forecastNextUpdate"></div>
         </div>
         <table aria-label="Forecast Table">
           <thead>
@@ -529,6 +551,7 @@
       const precipBtn = document.getElementById("precipBtn");
       const cloudBtn = document.getElementById("cloudBtn");
       const forecastUpdated = document.getElementById("forecastUpdated");
+      const forecastNextUpdate = document.getElementById("forecastNextUpdate");
       const forecastBody = document.getElementById("forecastBody");
       const dailyForecastStatus = document.getElementById("dailyForecastStatus");
       const dailyForecastBody = document.getElementById("dailyForecastBody");
@@ -704,6 +727,16 @@
           minute: "2-digit",
           hour12: false
         }).format(date).replace(",", "");
+      }
+
+      function formatNextHourUppsala() {
+        const nextHourMs = (Math.floor(Date.now() / 3600000) + 1) * 3600000;
+        return new Intl.DateTimeFormat("sv-SE", {
+          timeZone: "Europe/Stockholm",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        }).format(new Date(nextHourMs));
       }
 
       function parseUtcMillis(timeStr) {
@@ -955,6 +988,7 @@
           renderForecastRows(rows);
           const latestPredictionAt = payload.latest_prediction_at_utc || payload.generated_at_utc;
           forecastUpdated.textContent = "Senaste uppdatering: " + formatUppsalaTime(latestPredictionAt);
+          forecastNextUpdate.textContent = "Nästa uppdatering: " + formatNextHourUppsala();
         } catch (err) {
           forecastBody.innerHTML = "";
           const tr = document.createElement("tr");
@@ -962,12 +996,13 @@
           td.colSpan = 6;
           const errMsg = err && err.message ? err.message : String(err);
           const displayMsg = errMsg === "Failed to fetch"
-            ? "API ej kontaktbar på " + apiLabel() + ". Starta .\\ops\\start_server_background.ps1"
+            ? "API ej kontaktbar på " + apiLabel() + ". Starta python app.py"
             : errMsg;
           td.textContent = "Kunde inte hämta klassning: " + displayMsg;
           tr.appendChild(td);
           forecastBody.appendChild(tr);
           forecastUpdated.textContent = "Fel";
+          forecastNextUpdate.textContent = "";
         }
       }
 
@@ -1204,7 +1239,7 @@
         const o = p.overall;
         const summary = document.getElementById("perfSummary");
         summary.innerHTML = "";
-        [["Vår modell", "model_mae"], ["Open-Meteo", "om_mae"], ["SMHI", "smhi_mae"]].forEach(function (c) {
+        [["Skysightsign", "model_mae"], ["Open-Meteo", "om_mae"], ["SMHI", "smhi_mae"]].forEach(function (c) {
           const mine = o[c[1]];
           const best = Math.min(o.model_mae, o.om_mae, o.smhi_mae);
           const card = document.createElement("div");
@@ -1257,7 +1292,7 @@
         pSummary.innerHTML = "";
         pBody.innerHTML = "";
         const precipItems = [
-          ["Vår modell", "model"],
+          ["Skysightsign", "model"],
           ["Open-Meteo", "om"],
           ["SMHI", "smhi"]
         ];
@@ -1746,7 +1781,7 @@
         });
 
         charts.appendChild(makeChartCard(
-          "Molnmodell — medelfel (lägre är bättre)",
+          "Molnmodell — medelfel",
           [
             { label: "Medelfel", color: "#1c4f73" },
             { label: "Ny modell", color: "#1c4f73", dot: true }
@@ -1763,7 +1798,7 @@
         ));
 
         charts.appendChild(makeChartCard(
-          "Nederbördsmodell — träffsäkerhet (högre är bättre)",
+          "Nederbördsmodell — träffsäkerhet",
           [
             { label: "Rätt (%)", color: "#166534" },
             { label: "Ny modell", color: "#166534", dot: true }
@@ -1793,8 +1828,8 @@
           const latest = Array.isArray(data.runs) && data.runs.length ? data.runs[0] : null;
           if (latest) {
             const changed = latest.promoted || latest.precip_saved;
-            modelStatus.textContent = "Senaste körning: " + latest.name + " (" + fmtDayTime(latest.start_utc) + ") — "
-              + (changed ? "ny modell togs i bruk." : "nuvarande modell behölls.");
+            modelStatus.textContent = "Senaste körning: " + latest.name + " (" + fmtDayTime(latest.start_utc) + ")"
+              + (changed ? " — ny modell togs i bruk." : "");
           } else {
             modelStatus.textContent = "";
           }

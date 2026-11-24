@@ -8,10 +8,10 @@ on:
         type: boolean
         default: false
   schedule:
-    # Cron is UTC: hourly 05:37-22:37 Swedish winter time, 06:37-23:37 summer time.
-    - cron: "37 4-10,12-21 * * *"
+    # Cron is UTC: every hour on the hour, 24/7.
+    - cron: "0 0-10,12-23 * * *"
     # The daily run that also trains; must match TRAIN below.
-    - cron: "37 11 * * *"
+    - cron: "0 11 * * *"
 
 # Runs share saved state, so they must never overlap.
 concurrency:
@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
-      TRAIN: ${{ inputs.train || github.event.schedule == '37 11 * * *' }}
+      TRAIN: ${{ inputs.train || github.event.schedule == '0 11 * * *' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -49,7 +49,7 @@ jobs:
         run: |
           # The weather APIs sometimes time out.
           for attempt in 1 2 3 4 5; do
-            python scripts/update_forecast_cache.py --hours 24 --no-catch-up && exit 0
+            python scripts/update_forecast_cache.py --hours 24 && exit 0
             echo "::warning::Attempt $attempt failed"
             sleep $((attempt * 20))
           done
