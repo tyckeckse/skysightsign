@@ -1,30 +1,13 @@
 ﻿# 🌤️ Skysightsign
 
-*The majority of text in this README was AI-generated.*
+**Live:** https://skysightsign.vercel.app · **Presentation:** [presentation/index.html](presentation/index.html)
 
+Modellen tränar på molntäcket i procent från gamla prognoser och lär sig det systematiska felet mellan dessa och historiska utfall. Eftersom molntäcket ofta är 0 eller 100 % (helt klart eller helt mulet) har vi lagt till en devil-modell som lär sig när procenten ska dras till helt mulet, så att modellen slutar gissa på en säker mellansiffra.
 
-**Live page:** https://skysightsign.vercel.app · **Presentation with diagrams:** [presentation/index.html](presentation/index.html)
+![Gamla prognoser och SMHI:s observationer tränar modellen, som sedan rättar dagens prognos](presentation/learning-from-forecasts.svg)
 
+![Huvudmodellen säger 70 procent; devilen avgör med hjälp av fem andra vädermodeller om det ska bli 100 procent](presentation/overcast-devil.svg)
 
-## Learning from old forecasts
+## Källor
 
-
-![Old forecasts and SMHI observations train the model, which then corrects today's forecast](presentation/learning-from-forecasts.svg)
-
-It learns from old *forecasts* rather than from old weather on purpose: that way it sees exactly the kind of input it gets in real life, mistakes included. A second weather model (DWD's ICON) and the time of day and year also go in.
-
-## The overcast devil
-
-A second, simpler model sits on top: the **devil**. It answers only one question: *will the sky be completely grey?* To decide, it also asks five other weather models (from Denmark, the US, the UK, France and ECMWF) what they think. If enough signs point to grey, the devil overrules the main model and says 100 %. Otherwise the main model's number stands.
-
-![The main model says 70 percent; the devil, informed by five other weather models, decides whether to change it to 100 percent](presentation/overcast-devil.svg)
-
-
-## Rain, snow or sleet
-
-A separate model, trained on what SMHI's station reported (rain, snow, sleet or nothing), decides the precipitation type. A day is only labelled rainy if a good share of its hours are wet, so one short shower doesn't spoil a sunny day.
-
-## Credits
-
-Weather icons: Yr/NRK, CC BY 4.0. Forecast data: Open-Meteo. Observations: SMHI. Map: © OpenStreetMap contributors.
-
+Väderikoner: Yr/NRK, CC BY 4.0. Prognosdata: Open-Meteo. Observationer: SMHI. Karta: © OpenStreetMap contributors.
