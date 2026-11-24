@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 792 242" width="792" height="242" role="img" aria-label="Old forecasts and SMHI observations train the model, which then corrects today's forecast">
+  <style>
+    .bg { fill: #fffdf8; stroke: #d9d0c3; }
+    .box { fill: #e3ecf2; stroke: #1c4f73; stroke-width: 1.2; }
+    .hl { stroke-width: 2; }
+    .yes { fill: #efe8db; }
+    .label { fill: #1d2a2f; font: 600 13px "Segoe UI", -apple-system, system-ui, sans-serif; }
+    .sub { fill: #617076; font: 11px "Segoe UI", -apple-system, system-ui, sans-serif; }
+    .arrow { stroke: #617076; stroke-width: 1.4; fill: none; marker-end: url(#arrowhead); }
+    .arrowhead { fill: #617076; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1d2326; stroke: #33393c; }
+      .box { fill: #23313a; stroke: #8ec1e3; }
+      .yes { fill: #262c2f; }
+      .label { fill: #e6e2da; }
+      .sub, .arrowhead { fill: #9aa6aa; }
+      .arrow { stroke: #9aa6aa; }
+    }
+  </style>
+  <defs>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path class="arrowhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="-15.5" y="-15.5" width="791" height="241" rx="10"/>
+  <text class="sub" x="10" y="16">Learning (once a day)</text>
+  <rect class="box" x="10" y="26" width="170" height="56" rx="8"/>
+  <text class="label" x="95" y="50" text-anchor="middle">Old forecasts</text>
+  <text class="sub" x="95" y="68" text-anchor="middle">"60 % cloud at 14:00"</text>
+  <rect class="box" x="10" y="98" width="170" height="56" rx="8"/>
+  <text class="label" x="95" y="122" text-anchor="middle">What really happened</text>
+  <text class="sub" x="95" y="140" text-anchor="middle">SMHI: "90 % cloud"</text>
+  <rect class="box hl" x="270" y="60" width="200" height="64" rx="10"/>
+  <text class="label" x="370" y="88" text-anchor="middle">Model</text>
+  <text class="sub" x="370" y="106" text-anchor="middle">learns the forecast's habits</text>
+  <text class="sub" x="530" y="16">Forecasting (every hour)</text>
+  <rect class="box" x="530" y="26" width="220" height="56" rx="8"/>
+  <text class="label" x="640" y="50" text-anchor="middle">Today's forecast</text>
+  <text class="sub" x="640" y="68" text-anchor="middle">"60 % cloud at 14:00"</text>
+  <rect class="box" x="530" y="128" width="220" height="56" rx="8"/>
+  <text class="label" x="640" y="152" text-anchor="middle">Corrected forecast</text>
+  <text class="sub" x="640" y="170" text-anchor="middle">"probably 85 % cloud"</text>
+  <path class="arrow" d="M180,54 L268,84"/>
+  <path class="arrow" d="M180,126 L268,100"/>
+  <path class="arrow" d="M528,54 L472,84"/>
+  <path class="arrow" d="M470,110 L528,148"/>
+</svg>

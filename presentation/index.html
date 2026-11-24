@@ -59,15 +59,7 @@
       padding: 6px 14px;
       font-size: 0.95rem;
     }
-    .diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
-    .diagram svg { width: 100%; height: auto; display: block; }
-    .diagram .box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
-    .diagram .label { fill: var(--text); font-size: 13px; font-weight: 600; }
-    .diagram .sub { fill: var(--muted); font-size: 11px; }
-    .diagram .arrow { stroke: var(--muted); stroke-width: 1.4; fill: none; marker-end: url(#arrowhead); }
-    .diagram .hl { stroke-width: 2; }
-    .diagram .yes { fill: var(--code); }
-    .diagram .arrowhead { fill: var(--muted); }
+    .diagram img { width: 100%; height: auto; display: block; }
     footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   </style>
 </head>
@@ -88,34 +80,7 @@
     <h2>Learning from old forecasts</h2>
     <p>The trick is to compare what forecasts <em>said</em> with what the sky <em>did</em>. For almost four years of hours, the model looks at the forecast that was made for Uppsala and at how cloudy it really was at SMHI's weather station at Uppsala Airport. From that it learns the forecast's habits, for example when it is usually too gloomy or too optimistic.</p>
     <div class="diagram">
-      <svg viewBox="0 0 760 210" role="img" aria-label="Old forecasts and SMHI observations train the model, which then corrects today's forecast">
-        <defs>
-          <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-            <path class="arrowhead" d="M0,0 L10,5 L0,10 z"/>
-          </marker>
-        </defs>
-        <text class="sub" x="10" y="16">Learning (once a day)</text>
-        <rect class="box" x="10" y="26" width="170" height="56" rx="8"/>
-        <text class="label" x="95" y="50" text-anchor="middle">Old forecasts</text>
-        <text class="sub" x="95" y="68" text-anchor="middle">"60 % cloud at 14:00"</text>
-        <rect class="box" x="10" y="98" width="170" height="56" rx="8"/>
-        <text class="label" x="95" y="122" text-anchor="middle">What really happened</text>
-        <text class="sub" x="95" y="140" text-anchor="middle">SMHI: "90 % cloud"</text>
-        <rect class="box hl" x="270" y="60" width="200" height="64" rx="10"/>
-        <text class="label" x="370" y="88" text-anchor="middle">Model</text>
-        <text class="sub" x="370" y="106" text-anchor="middle">learns the forecast's habits</text>
-        <text class="sub" x="530" y="16">Forecasting (every hour)</text>
-        <rect class="box" x="530" y="26" width="220" height="56" rx="8"/>
-        <text class="label" x="640" y="50" text-anchor="middle">Today's forecast</text>
-        <text class="sub" x="640" y="68" text-anchor="middle">"60 % cloud at 14:00"</text>
-        <rect class="box" x="530" y="128" width="220" height="56" rx="8"/>
-        <text class="label" x="640" y="152" text-anchor="middle">Corrected forecast</text>
-        <text class="sub" x="640" y="170" text-anchor="middle">"probably 85 % cloud"</text>
-        <path class="arrow" d="M180,54 L268,84"/>
-        <path class="arrow" d="M180,126 L268,100"/>
-        <path class="arrow" d="M528,54 L472,84"/>
-        <path class="arrow" d="M470,110 L528,148"/>
-      </svg>
+      <img src="learning-from-forecasts.svg" alt="Old forecasts and SMHI observations train the model, which then corrects today's forecast">
     </div>
     <p>It learns from old <em>forecasts</em> rather than from old weather on purpose: that way it sees exactly the kind of input it gets in real life, mistakes included. A second weather model (DWD's ICON) and the time of day and year also go in.</p>
 
@@ -123,29 +88,7 @@
     <p>Models like this play it safe. On a fully grey day the main model tends to say "about 70 % cloud" when the honest answer is 100 %. That matters, because 70 % still sounds like a chance of sun.</p>
     <p>So a second, simpler model sits on top: the <strong>devil</strong>. It answers only one question: <em>will the sky be completely grey?</em> To decide, it also asks five other weather models (from Denmark, the US, the UK, France and ECMWF) what they think. If enough signs point to grey, the devil overrules the main model and says 100 %. Otherwise the main model's number stands.</p>
     <div class="diagram">
-      <svg viewBox="0 0 760 230" role="img" aria-label="The main model says 70 percent; the devil, informed by five other weather models, decides whether to change it to 100 percent">
-        <rect class="box" x="10" y="20" width="170" height="60" rx="8"/>
-        <text class="label" x="95" y="45" text-anchor="middle">Main model</text>
-        <text class="sub" x="95" y="64" text-anchor="middle">"70 % cloud"</text>
-        <rect class="box" x="10" y="130" width="170" height="80" rx="8"/>
-        <text class="label" x="95" y="155" text-anchor="middle">5 other models</text>
-        <text class="sub" x="95" y="174" text-anchor="middle">DMI, GFS, UKMO,</text>
-        <text class="sub" x="95" y="190" text-anchor="middle">Météo-France, ECMWF</text>
-        <rect class="box hl" x="250" y="70" width="200" height="90" rx="10"/>
-        <text class="label" x="350" y="102" text-anchor="middle">😈 The devil</text>
-        <text class="sub" x="350" y="122" text-anchor="middle">"Will it be completely</text>
-        <text class="sub" x="350" y="138" text-anchor="middle">grey (95 %+)?"</text>
-        <rect class="box yes" x="540" y="20" width="210" height="70" rx="8"/>
-        <text class="label" x="645" y="46" text-anchor="middle">Likely: show 100 %</text>
-        <text class="sub" x="645" y="66" text-anchor="middle">overcast, no sun</text>
-        <rect class="box" x="540" y="140" width="210" height="70" rx="8"/>
-        <text class="label" x="645" y="166" text-anchor="middle">Unlikely: keep 70 %</text>
-        <text class="sub" x="645" y="186" text-anchor="middle">main model decides</text>
-        <path class="arrow" d="M180,58 L248,98"/>
-        <path class="arrow" d="M180,168 L248,135"/>
-        <path class="arrow" d="M450,100 L538,58"/>
-        <path class="arrow" d="M450,130 L538,172"/>
-      </svg>
+      <img src="overcast-devil.svg" alt="The main model says 70 percent; the devil, informed by five other weather models, decides whether to change it to 100 percent">
     </div>
     <p>How sure the devil has to be is tuned again every day on recent hours. It only votes up to two days ahead, because some of the other models stop there.</p>
 
