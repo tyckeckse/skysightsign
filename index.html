@@ -298,8 +298,7 @@
 
     #forecastStatus {
       display: flex;
-      justify-content: space-between;
-      gap: 12px;
+      gap: 6px;
       flex-wrap: wrap;
     }
 
@@ -413,7 +412,7 @@
     </section>
     <section id="viewPerf" class="panel" hidden>
       <h2 class="forecast-title">Modell mot Open-Meteo, facit: SMHI Uppsala Flygplats</h2>
-      <p class="perf-note">Medelfel i molnighet (procentenheter), dagtimmar de senaste 7 dagarna. Klicka på en dag för att se felet timme för timme i senaste prognosen.</p>
+      <p class="perf-note">Medelfel i molnighet (procentenheter), dagtimmar de senaste 7 dagarna.</p>
       <div id="perfStatus" class="forecast-status"></div>
       <div id="perfSummary" class="perf-summary"></div>
       <table class="perf-table" aria-label="Per dag">
@@ -422,7 +421,7 @@
       </table>
       <div class="daily-wrap">
         <h3 class="daily-title">Nederbörd (senaste 7 dagarna)</h3>
-        <p class="perf-note">Andel rätt nederbördstyp (Uppehåll / Regn / Snö / Snöblandat) mot SMHI Rådande väder, dygnet runt. Klicka på en dag för att se senaste prognosen timme för timme.</p>
+        <p class="perf-note">Andel rätt nederbördstyp (Uppehåll / Regn / Snö / Snöblandat) mot SMHI Rådande väder, dygnet runt.</p>
         <div id="perfPrecipStatus" class="forecast-status"></div>
         <div id="perfPrecipSummary" class="perf-summary"></div>
         <table class="perf-table" aria-label="Nederbörd per dag">
@@ -988,7 +987,7 @@
           renderForecastRows(rows);
           const latestPredictionAt = payload.latest_prediction_at_utc || payload.generated_at_utc;
           forecastUpdated.textContent = "Senaste uppdatering: " + formatUppsalaTime(latestPredictionAt);
-          forecastNextUpdate.textContent = "Nästa uppdatering: " + formatNextHourUppsala();
+          forecastNextUpdate.textContent = "· Nästa uppdatering: " + formatNextHourUppsala();
         } catch (err) {
           forecastBody.innerHTML = "";
           const tr = document.createElement("tr");
