@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import json
 import math
-import pickle
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from model_common import DEVIL_MODEL_FILE, PRECIP_META_FILE, SOLAR_META_FILE, load_meta
+
 
 EXPERIMENT_NAME = "uppsala-solar"
-SOLAR_META_FILE = "uppsala_solar_meta.pkl"
-DEVIL_MODEL_FILE = "uppsala_overcast_devil.ubj"
-PRECIP_META_FILE = "uppsala_precip_meta.pkl"
 
 
 def _ms_to_utc_iso(ms: int | None) -> str | None:
@@ -47,14 +45,6 @@ def _parse_bool_tag(value: str | None) -> bool | None:
     if lowered == "false":
         return False
     return None
-
-
-def _load_pickle(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    with path.open("rb") as f:
-        data = pickle.load(f)
-    return data if isinstance(data, dict) else None
 
 
 def _load_train_state(path: Path) -> dict[str, Any]:
@@ -257,8 +247,8 @@ def build_model_status(
     train_state_path: Path,
     limit: int = 20,
 ) -> dict[str, Any]:
-    solar_meta = _load_pickle(model_dir / SOLAR_META_FILE)
-    precip_meta = _load_pickle(model_dir / PRECIP_META_FILE)
+    solar_meta = load_meta(model_dir / SOLAR_META_FILE)
+    precip_meta = load_meta(model_dir / PRECIP_META_FILE)
     devil_exists = (model_dir / DEVIL_MODEL_FILE).exists()
     runs, total_runs, latest_promoted = _load_mlflow_runs(mlflow_db_path, limit=limit)
     solar_summary = _summarize_solar_meta(solar_meta, devil_exists=devil_exists)
