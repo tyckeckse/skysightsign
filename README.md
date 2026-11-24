@@ -1,6 +1,6 @@
 ﻿# 🌤️ Skysightsign
 
-**Live:** https://skysightsign.vercel.app · **Presentation:** [presentation/index.html](presentation/index.html)
+**Live:** https://skysightsign.vercel.app
 
 En modell tränar på molntäcket i procent från gamla prognoser och lär sig det systematiska felet mellan dessa och historiska utfall. Eftersom molntäcket ofta är 0 eller 100 % (helt klart eller helt mulet) har vi lagt till en devil-modell som, genom att jämföra med prognoserna från fem andra vädermodeller (se figur), lär sig när procenten ska dras till helt mulet, så att modellen slutar gissa på en säker mellansiffra.
 
