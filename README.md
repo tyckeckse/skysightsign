@@ -35,3 +35,7 @@ A separate model, trained on what SMHI's station reported (rain, snow, sleet or 
 ## Credits
 
 Weather icons: Yr/NRK, CC BY 4.0. Forecast data: Open-Meteo. Observations: SMHI. Map: © OpenStreetMap contributors.
+
+---
+
+*The text in this README and on the presentation page is entirely AI-generated.*
