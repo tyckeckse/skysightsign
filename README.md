@@ -1,5 +1,7 @@
 ﻿# 🌤️ Skysightsign
 
+*The majority of text in this README was AI-generated.*
+
 
 **Live page:** https://skysightsign.vercel.app · **Presentation with diagrams:** [presentation/index.html](presentation/index.html)
 
