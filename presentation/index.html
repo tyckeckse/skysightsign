@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Skysightsign – how it works</title>
+  <title>Skysightsign – så funkar det</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>">
   <style>
     :root {
@@ -70,26 +70,19 @@
       <h1>🌤️ Skysightsign</h1>
       <p class="ai-note">The majority of text on this page was AI-generated.</p>
       <div class="links">
-        <a href="https://skysightsign.vercel.app">Live page</a>
+        <a href="https://skysightsign.vercel.app">Live</a>
       </div>
     </header>
 
-    <h2>Learning from old forecasts</h2>
+    <p>Modellen tränar på molntäcket i procent från gamla prognoser och lär sig det systematiska felet mellan dessa och historiska utfall. Eftersom molntäcket ofta är 0 eller 100 % (helt klart eller helt mulet) har vi lagt till en devil-modell som lär sig när procenten ska dras till helt mulet, så att modellen slutar gissa på en säker mellansiffra.</p>
     <div class="diagram">
-      <img src="learning-from-forecasts.svg" alt="Old forecasts and SMHI observations train the model, which then corrects today's forecast">
+      <img src="learning-from-forecasts.svg" alt="Gamla prognoser och SMHI:s observationer tränar modellen, som sedan rättar dagens prognos">
     </div>
-    <p>It learns from old <em>forecasts</em> rather than from old weather on purpose: that way it sees exactly the kind of input it gets in real life, mistakes included. A second weather model (DWD's ICON) and the time of day and year also go in.</p>
-
-    <h2>The overcast devil</h2>
-    <p>A second, simpler model sits on top: the <strong>devil</strong>. It answers only one question: <em>will the sky be completely grey?</em> To decide, it also asks five other weather models (from Denmark, the US, the UK, France and ECMWF) what they think. If enough signs point to grey, the devil overrules the main model and says 100 %. Otherwise the main model's number stands.</p>
     <div class="diagram">
-      <img src="overcast-devil.svg" alt="The main model says 70 percent; the devil, informed by five other weather models, decides whether to change it to 100 percent">
+      <img src="overcast-devil.svg" alt="Huvudmodellen säger 70 procent; devilen avgör med hjälp av fem andra vädermodeller om det ska bli 100 procent">
     </div>
 
-    <h2>Rain, snow or sleet</h2>
-    <p>A separate model, trained on what SMHI's station reported (rain, snow, sleet or nothing), decides the precipitation type. A day is only labelled rainy if a good share of its hours are wet, so one short shower doesn't spoil a sunny day.</p>
-
-    <footer>Weather icons: Yr/NRK, CC BY 4.0. Forecast data: Open-Meteo. Observations: SMHI. Map: © OpenStreetMap contributors.</footer>
+    <footer>Väderikoner: Yr/NRK, CC BY 4.0. Prognosdata: Open-Meteo. Observationer: SMHI. Karta: © OpenStreetMap contributors.</footer>
   </main>
 </body>
 </html>
