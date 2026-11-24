@@ -14,10 +14,7 @@ For every hour it shows a sun index (1 = clear, 0 = overcast), a label (sunny, m
 
 The trick is to compare what forecasts *said* with what the sky *did*. For almost four years of hours, the model looks at the forecast that was made for Uppsala and at how cloudy it really was at SMHI's weather station at Uppsala Airport. From that it learns the forecast's habits, for example when it is usually too gloomy or too optimistic.
 
-```
-old forecasts + what really happened  →  model learns the habits
-today's forecast  →  model  →  corrected forecast
-```
+![Old forecasts and SMHI observations train the model, which then corrects today's forecast](presentation/learning-from-forecasts.svg)
 
 It learns from old *forecasts* rather than from old weather on purpose: that way it sees exactly the kind of input it gets in real life, mistakes included. A second weather model (DWD's ICON) and the time of day and year also go in.
 
@@ -27,11 +24,7 @@ Models like this play it safe. On a fully grey day the main model tends to say "
 
 So a second, simpler model sits on top: the **devil**. It answers only one question: *will the sky be completely grey?* To decide, it also asks five other weather models (from Denmark, the US, the UK, France and ECMWF) what they think. If enough signs point to grey, the devil overrules the main model and says 100 %. Otherwise the main model's number stands.
 
-```
-main model ("70 %") + 5 other models  →  devil: completely grey?
-    likely   →  show 100 %
-    unlikely →  keep 70 %
-```
+![The main model says 70 percent; the devil, informed by five other weather models, decides whether to change it to 100 percent](presentation/overcast-devil.svg)
 
 How sure the devil has to be is tuned again every day on recent hours. It only votes up to two days ahead, because some of the other models stop there.
 
