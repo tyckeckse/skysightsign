@@ -72,6 +72,18 @@
     .perf-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 14px; }
     .perf-table th, .perf-table td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--line); }
     .perf-table th:first-child, .perf-table td:first-child { text-align: left; }
+    .label-short { display: none; }
+    .tabs { flex-wrap: wrap; }
+    @media (max-width: 600px) {
+      /* Short headers and tighter cells so the follow-up tables fit a phone screen. */
+      .label-full { display: none; }
+      .label-short { display: inline; }
+      .perf-table { font-size: 13px; }
+      .perf-table th, .perf-table td { padding: 5px 4px; }
+      .perf-table td:first-child { white-space: nowrap; }
+      #viewPerf { overflow-x: auto; }
+      .repo-link { flex-basis: 100%; margin-left: 0; }
+    }
     .perf-summary { display: flex; gap: 12px; margin: 0 0 14px; flex-wrap: wrap; }
     .perf-card { flex: 1; min-width: 140px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
     .perf-card.win { border-color: var(--accent); }
@@ -427,7 +439,7 @@
       <button id="tabForecast" type="button" role="tab" aria-selected="true">Prognos</button>
       <button id="tabPerf" type="button" role="tab" aria-selected="false">Uppföljning</button>
       <button id="tabModel" type="button" role="tab" aria-selected="false">Modell</button>
-      <a class="repo-link" href="https://github.com/tyckeckse/skysightsign" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a class="repo-link" href="https://github.com/tyckeckse/skysightsign" target="_blank" rel="noopener noreferrer">github.com/tyckeckse/skysightsign</a>
     </div>
     <section id="viewModel" class="panel" hidden>
       <h2 class="forecast-title">Aktiv modell</h2>
@@ -442,7 +454,7 @@
       <div id="perfStatus" class="forecast-status"></div>
       <div id="perfSummary" class="perf-summary"></div>
       <table class="perf-table" aria-label="Per dag">
-        <thead><tr><th>Dag</th><th>Uppmätt</th><th>Skysightsign</th><th>Open-Meteo</th><th>SMHI</th></tr></thead>
+        <thead><tr><th>Dag</th><th><span class="label-full">Uppmätt</span><span class="label-short">Uppm.</span></th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th></tr></thead>
         <tbody id="perfDay"></tbody>
       </table>
       <div class="daily-wrap">
@@ -451,7 +463,7 @@
         <div id="perfPrecipStatus" class="forecast-status"></div>
         <div id="perfPrecipSummary" class="perf-summary"></div>
         <table class="perf-table" aria-label="Nederbörd per dag">
-          <thead><tr><th>Dag</th><th>Uppmätt</th><th>Skysightsign</th><th>Open-Meteo</th><th>SMHI</th></tr></thead>
+          <thead><tr><th>Dag</th><th><span class="label-full">Uppmätt</span><span class="label-short">Uppm.</span></th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th></tr></thead>
           <tbody id="perfPrecipDay"></tbody>
         </table>
       </div>

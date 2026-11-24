@@ -7,6 +7,11 @@ on:
       - "README.md"
       - "presentation/**"
       - "tests/**"
+      # Page-only changes go through deploy-page.yml instead.
+      - "index.html"
+      - "icons/**"
+      - ".github/workflows/deploy-page.yml"
+      - ".github/workflows/tests.yml"
   workflow_dispatch:
     inputs:
       train:
