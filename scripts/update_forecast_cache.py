@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -20,12 +18,6 @@ SMHI_FORECAST_URL = (
 )
 LOG_PATH = ROOT_DIR / "data" / "forecast_log.jsonl"
 DEFAULT_LOG_PATH = ROOT_DIR / "data" / "cache_refresh.log"
-TRAIN_STATE_PATH = ROOT_DIR / "data" / "train_state.json"
-RETRAIN_SCRIPT = ROOT_DIR / "ops" / "run_retrain_background.ps1"
-MAX_TRAIN_AGE = timedelta(hours=25)  # 24h + 1h slack, so we don't race the 12:00 task
-# One line per catch-up attempt; its modification time spaces attempts out when training keeps failing.
-CATCH_UP_LOG_PATH = ROOT_DIR / "data" / "retrain_catch_up.log"
-MIN_CATCH_UP_INTERVAL = timedelta(hours=6)
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,7 +31,6 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         help="Loggniva (default: INFO).",
     )
-    parser.add_argument("--no-catch-up", action="store_true", help="Starta aldrig träning härifrån.")
     return parser.parse_args()
 
 
@@ -122,31 +113,6 @@ def append_forecast_log(payload: dict) -> int:
     return len(lines)
 
 
-def training_overdue(state_path: Path = TRAIN_STATE_PATH, now: datetime | None = None) -> bool:
-    """True if the last successful training is too old, e.g. because the nightly run was cut off."""
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        last = datetime.fromisoformat(state["last_train_utc"].replace("Z", "+00:00"))
-    except (OSError, ValueError, KeyError):
-        return True
-    return (now or datetime.now(timezone.utc)) - last > MAX_TRAIN_AGE
-
-
-def catch_up_allowed(log_path: Path = CATCH_UP_LOG_PATH, now: datetime | None = None) -> bool:
-    """False if a catch-up training was already started within MIN_CATCH_UP_INTERVAL."""
-    try:
-        last = datetime.fromtimestamp(log_path.stat().st_mtime, tz=timezone.utc)
-    except OSError:
-        return True
-    return (now or datetime.now(timezone.utc)) - last >= MIN_CATCH_UP_INTERVAL
-
-
-def note_catch_up(log_path: Path = CATCH_UP_LOG_PATH) -> None:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
-
-
 def main() -> None:
     args = parse_args()
     logger = setup_logger("sunshine.cache_refresh", args.log_file, level=args.log_level)
@@ -165,19 +131,6 @@ def main() -> None:
         with CACHE_PATH.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         append_forecast_log(payload)
-
-        if args.no_catch_up:
-            pass
-        elif training_overdue() and not catch_up_allowed():
-            logger.info(kv(svc="cache", event="retrain_catch_up_skipped", msg="Tried recently; waiting before retrying"))
-        elif training_overdue():
-            note_catch_up()
-            logger.info(kv(svc="cache", event="retrain_catch_up_start"))
-            # Same wrapper as the nightly task, so training settings live in one place.
-            subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(RETRAIN_SCRIPT)],
-                check=False,
-            )
 
         logger.info(
             kv(
