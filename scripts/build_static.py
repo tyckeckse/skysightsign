@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from pathlib import Path
 
 from app_server import (
@@ -18,6 +17,7 @@ from app_server import (
 )
 from forecast_eval import build_performance
 from model_status import build_model_status
+from static_page import API_DIR, static_page, write_page  # noqa: F401 (static_page is re-exported)
 
 
 # More than the page shows (24 h, 7 days), so it can drop passed hours and days between builds.
@@ -25,17 +25,6 @@ FORECAST_HOURS = 48
 DAILY_DAYS = 8
 PERFORMANCE_DAYS = 7
 MODEL_RUNS = 20
-HTML_TAG = '<html lang="sv">'
-# Not named "api": Vercel treats a root api/ folder as server functions.
-API_DIR = "api-data"
-
-
-def static_page(html: str) -> str:
-    """Mark the page as static, so it reads the JSON files instead of calling the app server."""
-    if html.count(HTML_TAG) != 1:
-        raise ValueError(f"Expected exactly one {HTML_TAG} in index.html")
-    return html.replace(HTML_TAG, '<html lang="sv" data-static-api="1">')
-
 
 def build_payloads() -> dict[str, dict]:
     forecast = build_rows(FORECAST_HOURS)
@@ -63,12 +52,10 @@ def main() -> None:
 
     # Fetch everything first, so a failed fetch never leaves a half-built site.
     payloads = build_payloads()
-    page = static_page((ROOT_DIR / "index.html").read_text(encoding="utf-8"))
 
+    write_page(args.out)
     api_dir = args.out / API_DIR
     api_dir.mkdir(parents=True, exist_ok=True)
-    (args.out / "index.html").write_text(page, encoding="utf-8")
-    shutil.copytree(ROOT_DIR / "icons", args.out / "icons", dirs_exist_ok=True)
     for name, payload in payloads.items():
         # allow_nan=False: browsers cannot parse NaN.
         text = json.dumps(payload, ensure_ascii=False, allow_nan=False)

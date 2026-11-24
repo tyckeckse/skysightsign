@@ -1,0 +1,52 @@
+name: Deploy page
+
+# A change to the page alone doesn't need a new forecast: publish it with the data that is already live.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "icons/**"
+      - "scripts/static_page.py"
+      - ".github/workflows/deploy-page.yml"
+  workflow_dispatch:
+
+# Same group as the hourly refresh, so the two never deploy at the same time.
+concurrency:
+  group: skysight
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python scripts/static_page.py --out site
+      - name: Copy the live data
+        run: |
+          mkdir -p site/api-data
+          for name in forecast-classes forecast-daily performance model-status; do
+            curl -fsS --retry 3 -o "site/api-data/$name.json" "https://skysightsign.vercel.app/api-data/$name.json"
+          done
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret: $name"
+              exit 1
+            fi
+          done
+          # Deploy from outside the repo so only the site is uploaded, without git metadata.
+          cp -r site "$RUNNER_TEMP/site"
+          cd "$RUNNER_TEMP/site"
+          npx --yes vercel@66.6.0 deploy --prod --yes --token "$VERCEL_TOKEN"
