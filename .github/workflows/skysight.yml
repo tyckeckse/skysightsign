@@ -1,0 +1,109 @@
+name: Skysight
+
+on:
+  workflow_dispatch:
+    inputs:
+      train:
+        description: Train the model too
+        type: boolean
+        default: false
+  schedule:
+    # Cron is UTC: hourly 05:37-22:37 Swedish winter time, 06:37-23:37 summer time.
+    - cron: "37 4-10,12-21 * * *"
+    # The daily run that also trains; must match TRAIN below.
+    - cron: "37 11 * * *"
+
+# Runs share saved state, so they must never overlap.
+concurrency:
+  group: skysight
+
+permissions:
+  contents: write # state is saved as release assets
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TRAIN: ${{ inputs.train || github.event.schedule == '37 11 * * *' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Install (MLflow only when training)
+        run: |
+          grep -v '^mlflow' requirements.txt > "$RUNNER_TEMP/requirements.txt"
+          pip install -r "$RUNNER_TEMP/requirements.txt"
+          if [ "$TRAIN" = "true" ]; then pip install -r requirements.txt; fi
+      - name: Restore newest state
+        run: |
+          asset=$(gh release view state --json assets -q '[.assets[].name | select(startswith("state-"))] | sort | last // empty')
+          if [ -z "$asset" ]; then echo "::error::No saved state found"; exit 1; fi
+          gh release download state -p "$asset" -O "$RUNNER_TEMP/state.tar.gz"
+          tar -xzf "$RUNNER_TEMP/state.tar.gz"
+          python scripts/relocate_mlflow.py
+      - name: Refresh forecast
+        run: |
+          # The weather APIs sometimes time out.
+          for attempt in 1 2 3 4 5; do
+            python scripts/update_forecast_cache.py --hours 24 --no-catch-up && exit 0
+            echo "::warning::Attempt $attempt failed"
+            sleep $((attempt * 20))
+          done
+          exit 1
+      - name: Train
+        id: train
+        if: env.TRAIN == 'true'
+        continue-on-error: true # the forecast is still saved and published
+        run: python -u scripts/train_model.py --history-days 1400 --rounds 100 --early-stopping-rounds 30 --log-eval-every 10
+      - name: Undo half-written training
+        if: steps.train.outcome == 'failure'
+        run: |
+          cp data/forecast_log.jsonl "$RUNNER_TEMP/"
+          tar -xzf "$RUNNER_TEMP/state.tar.gz"
+          cp "$RUNNER_TEMP/forecast_log.jsonl" data/
+      - name: Save state
+        run: |
+          name="state-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+          tar -czf "$name" model mlflow.db data/forecast_log.jsonl data/train_state.json
+          gh release upload state "$name"
+          # Keep the 20 newest as backups.
+          gh release view state --json assets -q '[.assets[].name | select(startswith("state-"))] | sort | .[:-20][]' |
+            while read -r old; do gh release delete-asset state "$old" --yes; done
+      - name: Build site
+        run: |
+          # The weather APIs sometimes time out.
+          for attempt in 1 2 3 4 5; do
+            python scripts/build_static.py --out site && exit 0
+            echo "::warning::Attempt $attempt failed"
+            sleep $((attempt * 20))
+          done
+          exit 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: skysight-site
+          path: site
+          if-no-files-found: error
+          retention-days: 3
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret: $name"
+              exit 1
+            fi
+          done
+          # Deploy from outside the repo so only the site is uploaded, without git metadata.
+          cp -r site "$RUNNER_TEMP/site"
+          cd "$RUNNER_TEMP/site"
+          npx --yes vercel@66.6.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+      - name: Report failed training
+        if: steps.train.outcome == 'failure'
+        run: exit 1

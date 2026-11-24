@@ -1,0 +1,14 @@
+*.log
+*.pyc
+mlflow.db
+mlruns/
+settings.local.json
+*.pid
+*.lock
+
+# Generated locally by training and the hourly refresh
+model/
+data/forecast_cache.json
+data/train_state.json
+data/forecast_log.jsonl
+site/
