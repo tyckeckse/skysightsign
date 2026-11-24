@@ -15,11 +15,10 @@ import numpy as np
 import requests
 import xgboost as xgb
 from icon_features import ICON_FEATURES
+from model_common import PRECIP_META_FILE, PRECIP_MODEL_FILE, WEATHER_FEATURES, time_features
 
 
 SMHI_WEATHER_URL = "https://opendata-download-metobs.smhi.se/api/version/latest/parameter/13/station/97530/period"
-PRECIP_MODEL_FILE = "uppsala_precip_model.ubj"
-PRECIP_META_FILE = "uppsala_precip_meta.pkl"
 
 PRECIP_CLASSES = ["Inget", "Regn", "Sno", "Snoblandat"]
 CLASS_TO_ID = {name: idx for idx, name in enumerate(PRECIP_CLASSES)}
@@ -35,14 +34,7 @@ PRECIP_EXTRA_HOURLY = [
     "weather_code",
 ]
 
-BASE_WEATHER_FEATURES = [
-    "cloud_cover",
-    "precipitation",
-    "cloud_cover_low",
-    "cloud_cover_mid",
-    "cloud_cover_high",
-    "relative_humidity_2m",
-]
+BASE_WEATHER_FEATURES = WEATHER_FEATURES
 
 PRECIP_WEATHER_INPUTS = BASE_WEATHER_FEATURES + PRECIP_EXTRA_HOURLY + ICON_FEATURES
 PRECIP_FEATURE_ORDER = PRECIP_WEATHER_INPUTS + [
@@ -179,19 +171,8 @@ def build_precip_features(
         icon_vals = [float(weather[name][i]) if name in weather else math.nan for name in ICON_FEATURES]
         iso = raw_time + "Z" if not raw_time.endswith("Z") else raw_time
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(timezone.utc)
-        hour = dt.hour
-        doy = int(dt.strftime("%j"))
-        two_pi = 2.0 * math.pi
-        xs.append(
-            req_vals
-            + icon_vals
-            + [
-                math.sin(two_pi * hour / 24.0),
-                math.cos(two_pi * hour / 24.0),
-                math.sin(two_pi * doy / 365.25),
-                math.cos(two_pi * doy / 365.25),
-            ]
-        )
+        tf = time_features(dt)
+        xs.append(req_vals + icon_vals + [tf["hour_sin"], tf["hour_cos"], tf["doy_sin"], tf["doy_cos"]])
         ys.append(int(target))
         keep_times.append(dt)
 
@@ -284,16 +265,7 @@ def predict_precip_for_hour(
     """Predict hourly precipitation class and probabilities for a single hour."""
     feature_order = meta.get("feature_order") or PRECIP_FEATURE_ORDER
     dt = datetime.fromtimestamp(utc_ms / 1000, tz=timezone.utc)
-    hour = dt.hour
-    doy = int(dt.strftime("%j"))
-    two_pi = 2.0 * math.pi
-    values = {
-        **weather,
-        "hour_sin": math.sin(two_pi * hour / 24.0),
-        "hour_cos": math.cos(two_pi * hour / 24.0),
-        "doy_sin": math.sin(two_pi * doy / 365.25),
-        "doy_cos": math.cos(two_pi * doy / 365.25),
-    }
+    values = {**weather, **time_features(dt)}
     fv = [values.get(name) for name in feature_order]
     x = np.array([fv], dtype=float)
     probs = booster.predict(xgb.DMatrix(x, feature_names=feature_order))[0]

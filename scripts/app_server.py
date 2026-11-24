@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-import pickle
+import posixpath
 import socket
 import sys
 import threading
@@ -11,7 +11,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import numpy as np
 import requests
@@ -19,23 +19,35 @@ import xgboost as xgb
 from forecast_eval import build_performance
 from icon_features import ICON_FEATURES, add_icon_features
 from log_utils import kv, setup_logger
+from model_common import (
+    DEVIL_MODEL_FILE,
+    PRECIP_META_FILE,
+    PRECIP_MODEL_FILE,
+    ROOT_DIR,
+    SOLAR_META_FILE,
+    SOLAR_MODEL_FILE,
+    UPPSALA_LAT,
+    UPPSALA_LON,
+    WEATHER_FEATURES,
+    day_of_year,
+    load_meta,
+    resolve_meta_path,
+    time_features,
+)
 from model_status import build_model_status
 from overcast_devil import DEVIL_MAX_LEAD_HOURS, EXTRA_FEATURES, add_extra_cloud, apply_devil, overcast_probability
 from precip_model import (
     PRECIP_ACTIVE_LABELS,
     PRECIP_EXTRA_HOURLY,
-    PRECIP_META_FILE,
-    PRECIP_MODEL_FILE,
     aggregate_daily_precip,
     predict_precip_for_hour,
 )
 from sun_time_utils import parse_utc_ms
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-MODEL_PATH = ROOT_DIR / "model" / "uppsala_solar_model.ubj"
-META_PATH = ROOT_DIR / "model" / "uppsala_solar_meta.pkl"
-DEVIL_PATH = ROOT_DIR / "model" / "uppsala_overcast_devil.ubj"
+MODEL_PATH = ROOT_DIR / "model" / SOLAR_MODEL_FILE
+META_PATH = ROOT_DIR / "model" / SOLAR_META_FILE
+DEVIL_PATH = ROOT_DIR / "model" / DEVIL_MODEL_FILE
 PRECIP_MODEL_PATH = ROOT_DIR / "model" / PRECIP_MODEL_FILE
 PRECIP_META_PATH = ROOT_DIR / "model" / PRECIP_META_FILE
 CACHE_PATH = ROOT_DIR / "data" / "forecast_cache.json"
@@ -43,18 +55,7 @@ FORECAST_LOG_PATH = ROOT_DIR / "data" / "forecast_log.jsonl"
 TRAIN_STATE_PATH = ROOT_DIR / "data" / "train_state.json"
 MLFLOW_DB_PATH = ROOT_DIR / "mlflow.db"
 APP_LOG_PATH = ROOT_DIR / "data" / "app_server.log"
-UPPSALA_LAT = 59.8586
-UPPSALA_LON = 17.6389
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-# Hourly fields fetched as model inputs; must cover WEATHER_FEATURES in train_model.py.
-WEATHER_FEATURES = [
-    "cloud_cover",
-    "precipitation",
-    "cloud_cover_low",
-    "cloud_cover_mid",
-    "cloud_cover_high",
-    "relative_humidity_2m",
-]
 DEFAULT_HOURS = 24
 DEFAULT_DAILY_DAYS = 7
 MAX_DAILY_DAYS = 14
@@ -77,10 +78,6 @@ def current_full_hour_utc_ms(now_ms: int) -> int:
     dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
     floored = dt.replace(minute=0, second=0, microsecond=0)
     return int(floored.timestamp() * 1000)
-
-
-def day_of_year(dt: datetime) -> int:
-    return int(dt.strftime("%j"))
 
 
 def safe_float(value: Any) -> float | None:
@@ -157,16 +154,7 @@ def predict_hourly_precip(meta: dict, utc_ms: int, weather: dict[str, float | No
 def feature_vector(utc_ms: int, weather: dict[str, float | None], feature_order: list[str]) -> list[float | None]:
     # Built from the model's own feature_order, so old and new models both get matching inputs.
     dt = datetime.fromtimestamp(utc_ms / 1000, tz=timezone.utc)
-    hour = dt.hour
-    doy = day_of_year(dt)
-    two_pi = math.pi * 2.0
-    values = {
-        **weather,
-        "hour_sin": math.sin(two_pi * hour / 24.0),
-        "hour_cos": math.cos(two_pi * hour / 24.0),
-        "doy_sin": math.sin(two_pi * doy / 365.25),
-        "doy_cos": math.cos(two_pi * doy / 365.25),
-    }
+    values = {**weather, **time_features(dt)}
     return [values.get(name) for name in feature_order]
 
 
@@ -238,15 +226,17 @@ def predict_hourly_sun(
 def load_model() -> tuple[xgb.Booster, dict]:
     global booster_cache, meta_cache, model_sig_cache
     with model_cache_lock:
-        if not MODEL_PATH.exists() or not META_PATH.exists():
+        resolved_meta_path = resolve_meta_path(META_PATH)
+        if not MODEL_PATH.exists() or resolved_meta_path is None:
             raise FileNotFoundError("Saknar modellfiler. Kör: python scripts\\train_model.py")
 
+        resolved_precip_meta = resolve_meta_path(PRECIP_META_PATH)
         devil_mtime = DEVIL_PATH.stat().st_mtime_ns if DEVIL_PATH.exists() else 0
         precip_model_mtime = PRECIP_MODEL_PATH.stat().st_mtime_ns if PRECIP_MODEL_PATH.exists() else 0
-        precip_meta_mtime = PRECIP_META_PATH.stat().st_mtime_ns if PRECIP_META_PATH.exists() else 0
+        precip_meta_mtime = resolved_precip_meta.stat().st_mtime_ns if resolved_precip_meta is not None else 0
         current_sig = (
             MODEL_PATH.stat().st_mtime_ns,
-            META_PATH.stat().st_mtime_ns,
+            resolved_meta_path.stat().st_mtime_ns,
             devil_mtime,
             precip_model_mtime,
             precip_meta_mtime,
@@ -262,8 +252,9 @@ def load_model() -> tuple[xgb.Booster, dict]:
         try:
             booster = xgb.Booster()
             booster.load_model(MODEL_PATH)
-            with META_PATH.open("rb") as f:
-                meta = pickle.load(f)
+            meta = load_meta(META_PATH)
+            if meta is None:
+                raise RuntimeError(f"Ogiltig metadatafil: {resolved_meta_path}")
             # Kept in memory next to the meta; only models trained with a devil have one.
             meta["_devil_booster"] = None
             if meta.get("devil") and DEVIL_PATH.exists():
@@ -272,13 +263,13 @@ def load_model() -> tuple[xgb.Booster, dict]:
                 meta["_devil_booster"] = devil
             meta["_precip_booster"] = None
             meta["_precip_meta"] = None
-            if PRECIP_MODEL_PATH.exists() and PRECIP_META_PATH.exists():
+            if PRECIP_MODEL_PATH.exists() and resolved_precip_meta is not None:
                 precip_booster = xgb.Booster()
                 precip_booster.load_model(PRECIP_MODEL_PATH)
-                with PRECIP_META_PATH.open("rb") as f:
-                    precip_meta = pickle.load(f)
-                meta["_precip_booster"] = precip_booster
-                meta["_precip_meta"] = precip_meta
+                precip_meta = load_meta(PRECIP_META_PATH)
+                if precip_meta is not None:
+                    meta["_precip_booster"] = precip_booster
+                    meta["_precip_meta"] = precip_meta
             booster_cache = booster
             meta_cache = meta
             model_sig_cache = current_sig
@@ -287,7 +278,7 @@ def load_model() -> tuple[xgb.Booster, dict]:
                     svc="app",
                     event="model_reload",
                     model_path=MODEL_PATH,
-                    meta_path=META_PATH,
+                    meta_path=resolved_meta_path,
                 )
             )
             return booster, meta
@@ -648,6 +639,15 @@ def load_cached_rows(hours: int) -> dict:
     return trim_rows(payload, hours)
 
 
+def is_allowed_static_path(raw_path: str) -> bool:
+    """Allow only the page itself and weather icons; block repo files like mlflow.db, logs, and scripts."""
+    decoded = unquote(raw_path).replace("\\", "/")
+    normalized = posixpath.normpath(decoded)
+    if normalized in ("/", "/index.html"):
+        return True
+    return normalized.startswith("/icons/") and ".." not in decoded.split("/")
+
+
 class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT_DIR), **kwargs)
@@ -689,6 +689,9 @@ class AppHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/health":
             self.send_json({"ok": True})
             return
+        if not is_allowed_static_path(parsed.path):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
         super().do_GET()
 
     def log_message(self, format: str, *args) -> None:
@@ -702,18 +705,15 @@ class AppHandler(SimpleHTTPRequestHandler):
                 raise ValueError("hours must be >= 1")
             if hours > 48:
                 hours = 48
+        except ValueError as exc:
+            self.send_api_error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
 
+        try:
             payload = load_cached_rows(hours)
             payload["source"] = "cache"
             payload["rows"] = enrich_rows(payload.get("rows", []))
-            body = json.dumps(payload).encode("utf-8")
-
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(payload)
             LOGGER.info(
                 kv(
                     svc="app",
@@ -739,22 +739,11 @@ class AppHandler(SimpleHTTPRequestHandler):
                 payload = build_rows(hours)
                 payload["source"] = "live"
                 payload["rows"] = enrich_rows(payload.get("rows", []))
-                body = json.dumps(payload).encode("utf-8")
-
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            except FileNotFoundError as exc:
-                self.send_api_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+                self.send_json(payload)
             except requests.RequestException as exc:
                 self.send_api_error(HTTPStatus.BAD_GATEWAY, f"Forecast fetch failed: {exc}")
             except Exception as exc:
                 self.send_api_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
-        except FileNotFoundError as exc:
-            self.send_api_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
         except requests.RequestException as exc:
             self.send_api_error(HTTPStatus.BAD_GATEWAY, f"Forecast fetch failed: {exc}")
         except Exception as exc:
@@ -764,13 +753,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         try:
             params = parse_qs(query)
             days = max(1, min(int(params.get("days", ["14"])[0]), 60))
-            body = json.dumps(build_performance(FORECAST_LOG_PATH, days)).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(build_performance(FORECAST_LOG_PATH, days))
         except ValueError as exc:
             self.send_api_error(HTTPStatus.BAD_REQUEST, str(exc))
         except requests.RequestException as exc:
@@ -804,14 +787,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
             payload = build_daily_temperature_rows(days=days, include_today=include_today)
             payload["source"] = "live"
-            body = json.dumps(payload).encode("utf-8")
-
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(payload)
             LOGGER.info(
                 kv(
                     svc="app",

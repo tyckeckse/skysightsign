@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import math
-import pickle
 import os
 import time
 from contextlib import contextmanager
@@ -21,6 +20,20 @@ import requests
 import xgboost as xgb
 from icon_features import ICON_FEATURES, add_icon_features
 from log_utils import kv, setup_logger
+from model_common import (
+    DEVIL_MODEL_FILE,
+    ROOT_DIR,
+    SOLAR_META_FILE,
+    SOLAR_MODEL_FILE,
+    UPPSALA_LAT,
+    UPPSALA_LON,
+    WEATHER_FEATURES,
+    day_of_year,
+    load_meta,
+    resolve_meta_path,
+    save_meta,
+    time_features,
+)
 from overcast_devil import (
     EXTRA_FEATURES,
     add_extra_cloud,
@@ -41,9 +54,6 @@ from precip_model import (
 from mlflow import MlflowClient
 
 
-UPPSALA_LAT = 59.8586
-UPPSALA_LON = 17.6389
-ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_HISTORY_DAYS = 1400  # ~start of MET Nordic (MEPS) in Open-Meteo forecast history, Dec 2022
 # Features: past Open-Meteo forecasts. Target: cloud cover observed by SMHI at Uppsala Flygplats.
 FORECAST_HISTORY_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
@@ -55,15 +65,6 @@ DEFAULT_TRAIN_LOG_PATH = ROOT_DIR / "data" / "train_model.log"
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_EVAL_EVERY = 10
 TRAIN_STATE_PATH = ROOT_DIR / "data" / "train_state.json"
-# Hourly Open-Meteo fields used as model inputs.
-WEATHER_FEATURES = [
-    "cloud_cover",
-    "precipitation",
-    "cloud_cover_low",
-    "cloud_cover_mid",
-    "cloud_cover_high",
-    "relative_humidity_2m",
-]
 MODEL_INPUTS = WEATHER_FEATURES + ICON_FEATURES
 FEATURE_ORDER = MODEL_INPUTS + [
     "hour_sin",
@@ -134,10 +135,6 @@ class PeriodicEvalLogger(xgb.callback.TrainingCallback):
 
 def parse_iso_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
-
-
-def day_of_year(dt: datetime) -> int:
-    return int(dt.strftime("%j"))
 
 
 def fetch_smhi_cloud_obs() -> dict[str, float]:
@@ -215,17 +212,8 @@ def build_features(data: Dataset) -> tuple[np.ndarray, np.ndarray, list[datetime
         if not np.all(np.isfinite(weather_values)) or not np.isfinite(target):
             continue
 
-        hour = dt.hour
-        doy = day_of_year(dt)
-        xs.append(
-            weather_values
-            + [
-                math.sin(2.0 * math.pi * hour / 24.0),
-                math.cos(2.0 * math.pi * hour / 24.0),
-                math.sin(2.0 * math.pi * doy / 365.25),
-                math.cos(2.0 * math.pi * doy / 365.25),
-            ]
-        )
+        tf = time_features(dt)
+        xs.append(weather_values + [tf["hour_sin"], tf["hour_cos"], tf["doy_sin"], tf["doy_cos"]])
         ys.append(float(target))
         keep_times.append(dt)
 
@@ -285,11 +273,8 @@ def save_train_state(payload: dict) -> None:
 def load_existing_thresholds(meta_path: Path) -> tuple[float, float]:
     mixed = float(DEFAULT_THRESHOLDS["mixed_idx"])
     sunny = float(DEFAULT_THRESHOLDS["sunny_idx"])
-    if not meta_path.exists():
-        return mixed, sunny
     try:
-        with meta_path.open("rb") as f:
-            meta = pickle.load(f)
+        meta = load_meta(meta_path)
         if not isinstance(meta, dict):
             return mixed, sunny
         th = meta.get("thresholds", {})
@@ -347,7 +332,7 @@ def parse_args() -> argparse.Namespace:
 
 
 MODEL_NAME = "uppsala-solar"
-DEVIL_FILE = "uppsala_overcast_devil.ubj"
+DEVIL_FILE = DEVIL_MODEL_FILE
 MIN_UNSEEN_ROWS = 48  # fewer rows than this is too noisy to judge, so the champion stays
 
 
@@ -380,21 +365,21 @@ def champion_predictions(champion: xgb.Booster, x: np.ndarray, extra: np.ndarray
     """The live forecast as the app makes it: the champion, plus its devil if it has one."""
     base = champion.predict(champion_matrix(champion, x))
     try:
-        with meta_path.open("rb") as f:
-            threshold = pickle.load(f)["devil"]["threshold"]
+        meta = load_meta(meta_path)
+        threshold = meta["devil"]["threshold"]
         devil = xgb.Booster()
         devil.load_model(devil_path)
         return apply_devil(base, overcast_probability(devil, x, FEATURE_ORDER, extra, base), threshold)
-    except (OSError, KeyError, TypeError, ValueError, xgb.core.XGBoostError):
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError, xgb.core.XGBoostError):
         return base  # older champion without a devil (or its devil no longer fits the inputs)
 
 
 def load_history_end(meta_path: Path) -> datetime | None:
     """Last observation time used to train, tune, or evaluate the champion for promotion."""
     try:
-        with meta_path.open("rb") as f:
-            return datetime.fromisoformat(pickle.load(f)["history_end"])
-    except (OSError, KeyError, TypeError, ValueError):
+        meta = load_meta(meta_path)
+        return datetime.fromisoformat(meta["history_end"])
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
 
 
@@ -443,8 +428,8 @@ def train() -> None:
             raise ValueError("--log-eval-every maste vara minst 1.")
 
         _, model_dir = ensure_dirs()
-        model_path = model_dir / "uppsala_solar_model.ubj"
-        meta_path = model_dir / "uppsala_solar_meta.pkl"
+        model_path = model_dir / SOLAR_MODEL_FILE
+        meta_path = model_dir / SOLAR_META_FILE
         devil_path = model_dir / DEVIL_FILE
         precip_model_path = model_dir / PRECIP_MODEL_FILE
         precip_meta_path = model_dir / PRECIP_META_FILE
@@ -652,13 +637,12 @@ def train() -> None:
         # Fair duel for the precip model too, independent of whether the cloud model was promoted.
         precip_champion: xgb.Booster | None = None
         precip_champion_meta: dict | None = None
-        if precip_model_path.exists() and precip_meta_path.exists():
+        if precip_model_path.exists() and resolve_meta_path(precip_meta_path) is not None:
             try:
                 precip_champion = xgb.Booster()
                 precip_champion.load_model(precip_model_path)
-                with precip_meta_path.open("rb") as f:
-                    precip_champion_meta = pickle.load(f)
-            except (OSError, pickle.UnpicklingError, xgb.core.XGBoostError):
+                precip_champion_meta = load_meta(precip_meta_path)
+            except (OSError, ValueError, json.JSONDecodeError, xgb.core.XGBoostError):
                 precip_champion, precip_champion_meta = None, None
         precip_duel_result = precip_duel(
             precip_booster,
@@ -711,12 +695,10 @@ def train() -> None:
             MlflowClient().set_registered_model_alias(MODEL_NAME, "champion", model_info.registered_model_version)
             booster.save_model(model_path)
             devil.save_model(devil_path)
-            with meta_path.open("wb") as f:
-                pickle.dump(exported_meta, f)
+            save_meta(meta_path, exported_meta)
         if save_precip:
             precip_booster.save_model(precip_model_path)
-            with precip_meta_path.open("wb") as f:
-                pickle.dump(precip_meta, f)
+            save_meta(precip_meta_path, precip_meta)
         logger.info(
             kv(
                 svc="train",

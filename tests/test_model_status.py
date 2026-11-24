@@ -87,8 +87,8 @@ class ModelStatusTests(unittest.TestCase):
             model_dir.mkdir()
             (model_dir / "uppsala_overcast_devil.ubj").write_bytes(b"stub")
 
-            with (model_dir / "uppsala_solar_meta.pkl").open("wb") as f:
-                pickle.dump(
+            (model_dir / "uppsala_solar_meta.json").write_text(
+                json.dumps(
                     {
                         "version": 2,
                         "trained_at_utc": "2026-11-20T13:09:21+00:00",
@@ -106,12 +106,13 @@ class ModelStatusTests(unittest.TestCase):
                             "rmse": 26.86,
                             "r2": 0.5969,
                         },
-                    },
-                    f,
-                )
+                    }
+                ),
+                encoding="utf-8",
+            )
 
-            with (model_dir / "uppsala_precip_meta.pkl").open("wb") as f:
-                pickle.dump(
+            (model_dir / "uppsala_precip_meta.json").write_text(
+                json.dumps(
                     {
                         "version": 1,
                         "trained_at_utc": "2026-11-20T13:09:29+00:00",
@@ -127,9 +128,10 @@ class ModelStatusTests(unittest.TestCase):
                             "val_precip_f1": 0.6754,
                             "val_mlogloss": 0.22918,
                         },
-                    },
-                    f,
-                )
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             train_state = root / "train_state.json"
             train_state.write_text(
@@ -179,6 +181,18 @@ class ModelStatusTests(unittest.TestCase):
             self.assertIsNone(payload["active_models"]["precip"])
             self.assertEqual(payload["runs"], [])
             self.assertEqual(payload["total_runs"], 0)
+
+    def test_falls_back_to_legacy_pickle_meta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model_dir = root / "model"
+            model_dir.mkdir()
+            with (model_dir / "uppsala_solar_meta.pkl").open("wb") as f:
+                pickle.dump({"version": 2, "feature_order": ["cloud_cover"], "metrics": {"mae": 15.0}}, f)
+
+            payload = build_model_status(model_dir, root / "missing.db", root / "missing_state.json")
+
+            self.assertEqual(payload["active_models"]["solar"]["val_mae"], 15.0)
 
 
 if __name__ == "__main__":
