@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,6 @@ SMHI_PRECIP_LATEST_URL = (
 OBS_TTL_SECONDS = 1800
 # A target hour's forecast is locked by the run made this many hours before it. 1 h is the main number.
 WINDOW_HOURS = (1, 6, 12, 24)
-PRECIP_DAYS = 7
 
 _obs_cache: dict[str, Any] = {"at": 0.0, "data": {}}
 _precip_obs_cache: dict[str, Any] = {"at": 0.0, "data": {}}
@@ -83,13 +82,12 @@ def _parse(value: str) -> datetime:
 
 
 SERIES = ("model", "om", "smhi")
-CLOUD_SERIES = SERIES + ("same",)  # "same": the sky stays as last observed
 
 
 def _summary(pairs: list[dict]) -> dict:
     n = len(pairs)
     out: dict[str, Any] = {"n": n}
-    for name in CLOUD_SERIES:
+    for name in SERIES:
         errs = [p[name] for p in pairs]
         out[f"{name}_mae"] = round(sum(abs(e) for e in errs) / n, 1) if n else None
         out[f"{name}_bias"] = round(sum(errs) / n, 1) if n else None
@@ -103,8 +101,8 @@ def _hour_rows(day_pairs: list[dict]) -> list[dict]:
             "time_utc": p["time_utc"],
             "obs": p["obs"],
             "lead_h": round(p["lead"], 1),
-            **{name: round(p["obs"] + p[name], 1) for name in CLOUD_SERIES},
-            **{f"{name}_err": round(p[name], 1) for name in CLOUD_SERIES},
+            **{name: round(p["obs"] + p[name], 1) for name in SERIES},
+            **{f"{name}_err": round(p[name], 1) for name in SERIES},
         }
         for p in sorted(day_pairs, key=lambda p: p["time_utc"])
     ]
@@ -122,19 +120,17 @@ def drop_duplicate_rows(log_rows: list[dict]) -> list[dict]:
     return unique
 
 
-def score(
+def lock_forecasts(
     log_rows: list[dict],
-    obs: dict[str, float],
+    obs: dict[str, Any],
+    fields: dict[str, str],
     days: int,
-    now: datetime | None = None,
-    issued_from: datetime | None = None,
-) -> dict:
-    """Compare locked forecasts (ours, Open-Meteo's, SMHI's, unchanged sky) to SMHI observations.
-
-    Per window, a target hour is scored once: by the first run in the clock hour that starts WINDOW_HOURS before it
-    and has all values. Errors are forecast - observed.
+    now: datetime,
+    issued_from: datetime | None,
+) -> dict[int, list[dict]]:
+    """Per window, one forecast per target hour: the first run in the clock hour that starts WINDOW_HOURS before it
+    and has all three forecasts. `fields` names the log field for each of SERIES.
     """
-    now = now or datetime.now(timezone.utc)
     cutoff = now.timestamp() - days * 86400
     locked: dict[tuple[int, datetime], dict] = {}
     for row in log_rows:
@@ -149,9 +145,7 @@ def score(
             continue
         if issued_from is not None and issued < issued_from:
             continue
-        # The run hour's own observation is not published yet when the run starts.
-        last_obs = obs.get((run_hour - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M"))
-        preds = {"model": row.get("pred_cloud"), "om": row.get("om_cloud"), "smhi": row.get("smhi_cloud"), "same": last_obs}
+        preds = {name: row.get(fields[name]) for name in SERIES}
         actual = obs.get(row["time_utc"][:16])
         if actual is None or None in preds.values():
             continue
@@ -164,10 +158,25 @@ def score(
             "issued": issued,
             "obs": actual,
             "lead": (target - issued).total_seconds() / 3600,
-            **{name: value - actual for name, value in preds.items()},
+            **preds,
         }
+    return {w: [p for (window, _), p in locked.items() if window == w] for w in WINDOW_HOURS}
 
-    by_window = {w: [p for (window, _), p in locked.items() if window == w] for w in WINDOW_HOURS}
+
+def score(
+    log_rows: list[dict],
+    obs: dict[str, float],
+    days: int,
+    now: datetime | None = None,
+    issued_from: datetime | None = None,
+) -> dict:
+    """Compare locked cloud forecasts (ours, Open-Meteo's, SMHI's) to SMHI observations. Errors are forecast - observed."""
+    now = now or datetime.now(timezone.utc)
+    fields = {"model": "pred_cloud", "om": "om_cloud", "smhi": "smhi_cloud"}
+    by_window = {
+        window: [{**p, **{name: p[name] - p["obs"] for name in SERIES}} for p in pairs]
+        for window, pairs in lock_forecasts(log_rows, obs, fields, days, now, issued_from).items()
+    }
     main = by_window[WINDOW_HOURS[0]]
     by_day = []
     for day in sorted({p["day"] for p in main}):
@@ -222,20 +231,12 @@ def _precip_summary(pairs: list[dict]) -> dict[str, Any]:
     return out
 
 
-def _precip_by_hour(day_pairs: list[dict]) -> list[dict]:
-    """Latest forecast per target hour (shortest lead): observed and predicted precipitation classes."""
-    hours = []
-    for t in sorted({p["time_utc"] for p in day_pairs}):
-        latest = min((p for p in day_pairs if p["time_utc"] == t), key=lambda p: p["lead"])
-        hours.append(
-            {
-                "time_utc": t,
-                "obs": latest["obs"],
-                "lead_h": round(latest["lead"], 1),
-                **{name: latest[name] for name in SERIES},
-            }
-        )
-    return hours
+def _precip_hour_rows(day_pairs: list[dict]) -> list[dict]:
+    """Observed and predicted precipitation classes per target hour."""
+    return [
+        {"time_utc": p["time_utc"], "obs": p["obs"], "lead_h": round(p["lead"], 1), **{name: p[name] for name in SERIES}}
+        for p in sorted(day_pairs, key=lambda p: p["time_utc"])
+    ]
 
 
 def score_precip(
@@ -245,45 +246,20 @@ def score_precip(
     now: datetime | None = None,
     issued_from: datetime | None = None,
 ) -> dict:
-    """Compare logged precipitation classes (ours, Open-Meteo's, SMHI's) to SMHI parameter 13 observations."""
+    """Compare locked precipitation classes (ours, Open-Meteo's, SMHI's) to SMHI parameter 13 observations."""
     now = now or datetime.now(timezone.utc)
-    cutoff = now.timestamp() - days * 86400
-    pairs: list[dict[str, Any]] = []
-
-    for row in log_rows:
-        try:
-            target = _parse(row["time_utc"])
-            issued = _parse(row["issued_at_utc"])
-        except (KeyError, ValueError, TypeError):
-            continue
-        preds = {"model": row.get("pred_precip"), "om": row.get("om_precip"), "smhi": row.get("smhi_precip")}
-        actual = obs.get(row["time_utc"][:16])
-        if actual is None or None in preds.values() or target.timestamp() < cutoff:
-            continue
-        if issued_from is not None and issued < issued_from:
-            continue
-        if issued > target:  # made after the hour began, so not a real forecast
-            continue
-        pairs.append(
-            {
-                "day": target.strftime("%Y-%m-%d"),
-                "time_utc": target.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "obs": actual,
-                "lead": (target - issued).total_seconds() / 3600,
-                **{name: str(value) for name, value in preds.items()},
-            }
-        )
-
+    fields = {"model": "pred_precip", "om": "om_precip", "smhi": "smhi_precip"}
+    by_window = lock_forecasts(log_rows, obs, fields, days, now, issued_from)
+    main = by_window[WINDOW_HOURS[0]]
     by_day = []
-    for day in sorted({p["day"] for p in pairs}):
-        day_pairs = [p for p in pairs if p["day"] == day]
-        by_day.append({"day": day, **_precip_summary(day_pairs), "hours": _precip_by_hour(day_pairs)})
-
+    for day in sorted({p["day"] for p in main}):
+        day_pairs = [p for p in main if p["day"] == day]
+        by_day.append({"day": day, **_precip_summary(day_pairs), "hours": _precip_hour_rows(day_pairs)})
     return {
-        **_precip_summary(pairs),
-        "unique_hours": len({p["time_utc"] for p in pairs}),
+        **_precip_summary(main),
         "issued_from_utc": issued_from.strftime("%Y-%m-%dT%H:%M:%SZ") if issued_from else None,
         "by_day": by_day,
+        "by_window": [{"window_h": w, **_precip_summary(pairs)} for w, pairs in by_window.items()],
     }
 
 
@@ -298,5 +274,5 @@ def build_performance(log_path: Path, days: int) -> dict:
         precip_obs = fetch_recent_precip_obs() if p_start is not None else {}
     except requests.RequestException:
         precip_obs = {}
-    result["precip"] = score_precip(rows, precip_obs, PRECIP_DAYS, issued_from=p_start)
+    result["precip"] = score_precip(rows, precip_obs, days, issued_from=p_start)
     return result
