@@ -23,7 +23,7 @@ from static_page import API_DIR, static_page, write_page  # noqa: F401 (static_p
 # More than the page shows (24 h, 7 days), so it can drop passed hours and days between builds.
 FORECAST_HOURS = 48
 DAILY_DAYS = 8
-PERFORMANCE_DAYS = 7
+PERFORMANCE_DAYS = 30
 MODEL_RUNS = 20
 
 def build_payloads() -> dict[str, dict]:

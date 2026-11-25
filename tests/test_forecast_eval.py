@@ -11,62 +11,57 @@ import forecast_eval
 
 
 class ScoreTest(unittest.TestCase):
-    def test_skips_hours_without_smhi_forecast(self):
-        now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
-        log = [{"issued_at_utc": "2026-10-25T06:00:00Z", "time_utc": "2026-10-25T08:00:00Z", "pred_cloud": 60.0, "om_cloud": 100.0, "smhi_cloud": None}]
-        result = forecast_eval.score(log, {"2026-10-25T08:00": 80.0}, days=14, now=now)
-        self.assertEqual(result["overall"]["n"], 0)
+    NOW = datetime(2026, 10, 25, 18, 0, tzinfo=timezone.utc)
+    OBS = {"2026-10-25T06:00": 70.0, "2026-10-25T08:00": 80.0}
 
-    def test_scores_model_and_open_meteo_against_obs(self):
-        now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
-        log = [
-            {"issued_at_utc": "2026-10-25T06:00:00Z", "time_utc": "2026-10-25T08:00:00Z", "pred_cloud": 60.0, "om_cloud": 100.0, "smhi_cloud": 75.0},
-            {"issued_at_utc": "2026-10-25T06:00:00Z", "time_utc": "2026-10-25T09:00:00Z", "pred_cloud": 50.0, "om_cloud": 50.0, "smhi_cloud": 50.0},
-            {"issued_at_utc": "2026-10-25T06:00:00Z", "time_utc": "2026-10-25T20:00:00Z", "pred_cloud": 0.0, "om_cloud": 0.0, "smhi_cloud": 0.0},
-        ]
-        obs = {"2026-10-25T08:00": 80.0, "2026-10-25T09:00": 50.0}
-        result = forecast_eval.score(log, obs, days=14, now=now)
-        self.assertEqual(result["overall"]["n"], 2)
-        self.assertEqual(result["overall"]["model_mae"], 10.0)
-        self.assertEqual(result["overall"]["om_mae"], 10.0)
-        self.assertEqual(result["overall"]["model_bias"], -10.0)
-        self.assertEqual(result["overall"]["om_bias"], 10.0)
-        self.assertEqual(result["overall"]["smhi_mae"], 2.5)
-        self.assertEqual(result["by_lead"][0]["n"], 2)
-        self.assertEqual(len(result["by_day"]), 1)
+    def row(self, issued, **values):
+        base = {"time_utc": "2026-10-25T08:00:00Z", "pred_cloud": 60.0, "om_cloud": 100.0, "smhi_cloud": 75.0}
+        return {"issued_at_utc": issued, **base, **values}
+
+    def score(self, log, obs=None, **kwargs):
+        return forecast_eval.score(log, obs or self.OBS, days=30, now=self.NOW, **kwargs)
+
+    def test_scores_the_locked_hour(self):
+        result = self.score([self.row("2026-10-25T07:01:00Z")])
+        overall = result["overall"]
+        self.assertEqual(overall["n"], 1)
+        self.assertEqual((overall["model_mae"], overall["om_mae"], overall["smhi_mae"]), (20.0, 20.0, 5.0))
+        self.assertEqual((overall["model_bias"], overall["om_bias"]), (-20.0, 20.0))
+        self.assertEqual(result["by_day"][0]["hours"][0]["model"], 60.0)
+
+    def test_same_sky_uses_the_hour_before_the_run_hour(self):
+        result = self.score([self.row("2026-10-25T07:01:00Z")], {**self.OBS, "2026-10-25T07:00": 0.0})
+        self.assertEqual(result["by_day"][0]["hours"][0]["same"], 70.0)
+
+    def test_first_run_in_the_hour_locks(self):
+        log = [self.row("2026-10-25T07:40:00Z", pred_cloud=10.0), self.row("2026-10-25T07:01:00Z")]
+        result = self.score(log)
+        self.assertEqual(result["overall"]["n"], 1)
+        self.assertEqual(result["overall"]["model_mae"], 20.0)
+
+    def test_incomplete_first_run_is_skipped(self):
+        log = [self.row("2026-10-25T07:01:00Z", smhi_cloud=None), self.row("2026-10-25T07:40:00Z", pred_cloud=70.0)]
+        self.assertEqual(self.score(log)["overall"]["model_mae"], 10.0)
+
+    def test_older_and_too_late_runs_do_not_fill_in(self):
+        log = [self.row("2026-10-25T06:59:00Z"), self.row("2026-10-25T08:01:00Z")]
+        self.assertEqual(self.score(log)["overall"]["n"], 0)
+
+    def test_windows_are_kept_apart(self):
+        obs = {**self.OBS, "2026-10-25T01:00": 50.0, "2026-10-24T07:00": 40.0}
+        log = [self.row("2026-10-25T07:01:00Z"), self.row("2026-10-25T02:01:00Z"), self.row("2026-10-24T08:01:00Z")]
+        windows = {w["window_h"]: w for w in self.score(log, obs)["by_window"]}
+        self.assertEqual({h: w["n"] for h, w in windows.items()}, {1: 1, 6: 1, 12: 0, 24: 1})
+        self.assertEqual(windows[6]["same_mae"], 30.0)
+        self.assertIsNone(windows[12]["model_mae"])
 
     def test_skips_forecasts_issued_before_issued_from(self):
-        now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
-        row = {"time_utc": "2026-10-25T09:00:00Z", "pred_cloud": 50.0, "om_cloud": 50.0, "smhi_cloud": 50.0}
-        log = [{**row, "issued_at_utc": "2026-10-25T05:00:00Z"}, {**row, "issued_at_utc": "2026-10-25T07:00:00Z"}]
-        issued_from = datetime(2026, 10, 25, 6, 0, tzinfo=timezone.utc)
-        result = forecast_eval.score(log, {"2026-10-25T09:00": 50.0}, days=14, now=now, issued_from=issued_from)
-        self.assertEqual(result["overall"]["n"], 1)
+        start = datetime(2026, 10, 25, 7, 30, tzinfo=timezone.utc)
+        self.assertEqual(self.score([self.row("2026-10-25T07:01:00Z")], issued_from=start)["overall"]["n"], 0)
 
-    def test_skips_forecast_made_after_the_hour_began(self):
-        now = datetime(2026, 11, 20, 18, 0, tzinfo=timezone.utc)
-        row = {"time_utc": "2026-11-20T13:00:00Z", "pred_cloud": 100.0, "om_cloud": 100.0, "smhi_cloud": 100.0}
-        log = [{**row, "issued_at_utc": "2026-11-20T13:10:01Z"}, {**row, "issued_at_utc": "2026-11-20T12:00:05Z"}]
-        result = forecast_eval.score(log, {"2026-11-20T13:00": 100.0}, days=14, now=now)
-        self.assertEqual(result["overall"]["n"], 1)
-        self.assertEqual(result["by_day"][0]["hours"][0]["lead_h"], 1.0)
-
-    def test_by_day_includes_latest_forecast_per_hour(self):
-        now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)
-        row = {"time_utc": "2026-10-25T08:00:00Z", "om_cloud": 80.0, "smhi_cloud": 80.0}
-        log = [
-            {**row, "issued_at_utc": "2026-10-25T05:00:00Z", "pred_cloud": 60.0},
-            {**row, "issued_at_utc": "2026-10-25T07:00:00Z", "pred_cloud": 70.0},
-        ]
-        result = forecast_eval.score(log, {"2026-10-25T08:00": 80.0}, days=14, now=now)
-        hours = result["by_day"][0]["hours"]
-        self.assertEqual(len(hours), 1)
-        self.assertEqual(hours[0]["time_utc"], "2026-10-25T08:00:00Z")
-        self.assertEqual(hours[0]["obs"], 80.0)
-        self.assertEqual(hours[0]["lead_h"], 1.0)
-        self.assertEqual(hours[0]["model"], 70.0)
-        self.assertEqual(hours[0]["model_err"], -10.0)
-        self.assertEqual(hours[0]["om_err"], 0.0)
+    def test_splits_by_observed_sky(self):
+        sky = {s["sky"]: s["n"] for s in self.score([self.row("2026-10-25T07:01:00Z")])["by_sky"]}
+        self.assertEqual(sky, {"clear": 0, "mixed": 1, "overcast": 0})
 
 
 class DropDuplicateRowsTest(unittest.TestCase):

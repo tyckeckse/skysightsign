@@ -56,7 +56,7 @@ jobs:
         run: |
           # The weather APIs sometimes time out.
           for attempt in 1 2 3 4 5; do
-            python scripts/update_forecast_cache.py --hours 24 && exit 0
+            python scripts/update_forecast_cache.py --hours 25 && exit 0
             echo "::warning::Attempt $attempt failed"
             sleep $((attempt * 20))
           done
