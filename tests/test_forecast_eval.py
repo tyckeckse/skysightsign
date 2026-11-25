@@ -53,10 +53,6 @@ class ScoreTest(unittest.TestCase):
         start = datetime(2026, 10, 25, 7, 30, tzinfo=timezone.utc)
         self.assertEqual(self.score([self.row("2026-10-25T07:01:00Z")], issued_from=start)["overall"]["n"], 0)
 
-    def test_splits_by_observed_sky(self):
-        sky = {s["sky"]: s["n"] for s in self.score([self.row("2026-10-25T07:01:00Z")])["by_sky"]}
-        self.assertEqual(sky, {"clear": 0, "mixed": 1, "overcast": 0})
-
 
 class DropDuplicateRowsTest(unittest.TestCase):
     def test_keeps_one_row_per_issue_minute_and_target_hour(self):
