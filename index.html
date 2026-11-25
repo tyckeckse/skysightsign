@@ -254,16 +254,43 @@
       overflow: hidden;
     }
 
-    #map.cloud-mode {
-      background: #334155;
+    #map { background: #2e3336; }
+    .map-wrap { position: relative; }
+    .layer-switch {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      display: flex;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
     }
+    .layer-switch button { border: 0; border-radius: 0; }
+    .layer-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+    .uppsala-label {
+      border: 0;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(255, 253, 248, 0.9);
+      box-shadow: none;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .uppsala-label::before { display: none; }
 
     .controls {
       margin-top: 10px;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       gap: 8px;
+    }
+    .time-label {
+      min-width: 70px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: right;
+      white-space: nowrap;
     }
 
     button {
@@ -285,16 +312,8 @@
 
     input[type="range"] {
       flex: 1;
-      min-width: 220px;
+      min-width: 0;
       accent-color: var(--accent);
-    }
-
-    .meta {
-      margin-top: 10px;
-      font-size: 14px;
-      color: var(--muted);
-      display: grid;
-      gap: 4px;
     }
 
     .forecast-title {
@@ -405,6 +424,7 @@
       }
       /* Forecast tables above the map on small screens. */
       .layout > aside { order: -1; }
+      #map { height: min(60vh, 480px); }
       /* A table that is still too wide scrolls sideways instead of widening the page. */
       .layout > aside { min-width: 0; overflow-x: auto; }
       .time-full { display: none; }
@@ -487,18 +507,19 @@
     </section>
     <div class="layout" id="viewForecast">
       <div class="panel">
-        <div id="map" aria-label="Skysightsign"></div>
-        <div class="controls">
-          <button id="precipBtn" type="button">Nederbörd</button>
-          <button id="cloudBtn" type="button">Moln</button>
-          <button id="prevBtn" type="button">Prev</button>
-          <button id="playBtn" type="button" class="icon-btn">&#9654;</button>
-          <button id="nextBtn" type="button">Next</button>
-          <input id="frameSlider" type="range" min="0" max="0" value="0" step="1">
+        <div class="map-wrap">
+          <div id="map" aria-label="Skysightsign"></div>
+          <div class="layer-switch" role="group" aria-label="Kartlager">
+            <button id="cloudBtn" type="button">Moln</button>
+            <button id="precipBtn" type="button">Nederbörd</button>
+          </div>
         </div>
-        <div class="meta">
-          <div id="timeLabel">Frame-tid: -</div>
-          <div id="frameLabel">Frame: -</div>
+        <div class="controls">
+          <button id="prevBtn" type="button" class="icon-btn" aria-label="Föregående timme">&#8249;</button>
+          <button id="playBtn" type="button" class="icon-btn" aria-label="Spela upp">&#9654;</button>
+          <button id="nextBtn" type="button" class="icon-btn" aria-label="Nästa timme">&#8250;</button>
+          <input id="frameSlider" type="range" min="0" max="0" value="0" step="1" aria-label="Tid">
+          <div id="timeLabel" class="time-label">-</div>
         </div>
       </div>
       <aside class="panel">
@@ -563,8 +584,8 @@
       };
       const CLOUD_MIN_VISIBLE_ZOOM = 4;
       const LAYER_OPACITY = {
-        precipitation: 0.5,
-        clouds: 0.78
+        precipitation: 0.9,
+        clouds: 0.9
       };
       // Yr weather symbols (CC BY 4.0, Yr/NRK): credit Yr/NRK if this app is ever published.
       // A string is one icon for the label; an object picks the icon by precipitation intensity.
@@ -597,7 +618,6 @@
       const STATIC_API = document.documentElement.dataset.staticApi === "1";
 
       const timeLabel = document.getElementById("timeLabel");
-      const frameLabel = document.getElementById("frameLabel");
       const slider = document.getElementById("frameSlider");
       const playBtn = document.getElementById("playBtn");
       const prevBtn = document.getElementById("prevBtn");
@@ -671,7 +691,10 @@
       const map = L.map("map", {
         center: MAP_CENTER,
         zoom: MAP_ZOOM,
-        zoomControl: true
+        zoomControl: true,
+        // Zoom with the + and - buttons, so scrolling past the map doesn't zoom it.
+        scrollWheelZoom: false,
+        doubleClickZoom: false
       });
       map.attributionControl.setPrefix(false);
 
@@ -679,6 +702,9 @@
         maxZoom: 10,
         attribution: "&copy; OpenStreetMap contributors"
       }).addTo(map);
+      L.circleMarker([59.8586, 17.6389], { pane: "markerPane", radius: 5, color: "#fff", weight: 2, fillColor: "#c2410c", fillOpacity: 1, interactive: false })
+        .bindTooltip("Uppsala", { permanent: true, direction: "bottom", offset: [0, 2], className: "uppsala-label" })
+        .addTo(map);
       map.createPane("weatherPane");
       map.getPane("weatherPane").style.mixBlendMode = "normal";
       const weatherPane = map.getPane("weatherPane");
@@ -764,10 +790,6 @@
         }
       });
 
-      function formatUtcLabel(ms) {
-        return new Date(ms).toISOString().replace("T", " ").replace(".000Z", " UTC");
-      }
-
       function formatUppsalaTime(isoUtcString) {
         if (!isoUtcString) return "-";
         const date = new Date(isoUtcString);
@@ -838,22 +860,19 @@
       }
 
       function updateLayerButtons() {
-        precipBtn.disabled = selectedLayer === "precipitation";
-        cloudBtn.disabled = selectedLayer === "clouds";
+        precipBtn.setAttribute("aria-pressed", String(selectedLayer === "precipitation"));
+        cloudBtn.setAttribute("aria-pressed", String(selectedLayer === "clouds"));
       }
 
       function updateVisualMode() {
         const isClouds = selectedLayer === "clouds";
-        const mapEl = document.getElementById("map");
         const tilePane = map.getPane("tilePane");
-        mapEl.classList.toggle("cloud-mode", isClouds);
-        // Darken OSM basemap in cloud mode so white clouds contrast clearly against clear sky.
+        // Mute the basemap so the weather stands out.
         if (tilePane) {
-          tilePane.style.filter = isClouds
-            ? "invert(0.82) hue-rotate(180deg) brightness(0.95) contrast(0.95) saturate(0.85)"
-            : "";
+          tilePane.style.filter = "grayscale(1) invert(1) contrast(0.7) brightness(0.6)";
         }
-        weatherPane.style.mixBlendMode = "normal";
+        // Yr's precipitation tiles have an opaque black background; "screen" makes black disappear.
+        weatherPane.style.mixBlendMode = isClouds ? "normal" : "screen";
         weatherPane.style.filter = "";
       }
 
@@ -902,9 +921,7 @@
           }
         }
 
-        const utcMs = parseUtcMillis(frame.time);
-        timeLabel.textContent = "Frame-tid: " + formatUtcLabel(utcMs);
-        frameLabel.textContent = "Frame: " + (currentFrame + 1) + "/" + frames.length;
+        timeLabel.textContent = formatUppsalaWeekdayTime(new Date(parseUtcMillis(frame.time)).toISOString());
       }
 
       function cssForLabel(label) {
@@ -1971,7 +1988,7 @@
       updateVisualMode();
       stopPlayback();
       loadFrames().catch(function () {
-        timeLabel.textContent = "Frame-tid: Fel vid hämtning";
+        timeLabel.textContent = "Fel vid hämtning";
       });
       loadForecastTable();
       loadDailyForecast();
