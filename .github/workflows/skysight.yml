@@ -1,4 +1,5 @@
 name: Skysight
+run-name: "Skysight: ${{ inputs.train == true && 'inference + training' || 'inference' }}"
 
 on:
   push:
@@ -52,7 +53,8 @@ jobs:
           gh release download state -p "$asset" -O "$RUNNER_TEMP/state.tar.gz"
           tar -xzf "$RUNNER_TEMP/state.tar.gz"
           python scripts/relocate_mlflow.py
-      - name: Refresh forecast
+      - name: "Inference: forecast and log"
+        id: forecast
         run: |
           # The weather APIs sometimes time out.
           for attempt in 1 2 3 4 5; do
@@ -61,12 +63,12 @@ jobs:
             sleep $((attempt * 20))
           done
           exit 1
-      - name: Train
+      - name: "Training: new models (only when switched on)"
         id: train
         if: env.TRAIN == 'true'
         continue-on-error: true # the forecast is still saved and published
         run: python -u scripts/train_model.py --history-days 1400 --rounds 100 --early-stopping-rounds 30 --log-eval-every 10
-      - name: Undo half-written training
+      - name: "Training: undo if it failed"
         if: steps.train.outcome == 'failure'
         run: |
           cp data/forecast_log.jsonl "$RUNNER_TEMP/"
@@ -80,7 +82,8 @@ jobs:
           # Keep the 20 newest as backups.
           gh release view state --json assets -q '[.assets[].name | select(startswith("state-"))] | sort | .[:-20][]' |
             while read -r old; do gh release delete-asset state "$old" --yes; done
-      - name: Build site
+      - name: "Inference: build site"
+        id: site
         run: |
           # The weather APIs sometimes time out.
           for attempt in 1 2 3 4 5; do
@@ -96,6 +99,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Deploy to Vercel
+        id: deploy
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -114,3 +118,22 @@ jobs:
       - name: Report failed training
         if: steps.train.outcome == 'failure'
         run: exit 1
+      - name: Draw what ran
+        if: always()
+        env:
+          FORECAST: ${{ steps.forecast.outcome }}
+          TRAINING: ${{ steps.train.outcome }}
+          SITE: ${{ steps.site.outcome }}
+          DEPLOY: ${{ steps.deploy.outcome }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          \`\`\`mermaid
+          flowchart LR
+            forecast["Inference<br/>forecast and log<br/>$FORECAST"]:::$FORECAST --> training["Training<br/>new models<br/>$TRAINING"]:::$TRAINING
+            training --> site["Inference<br/>build site<br/>$SITE"]:::$SITE --> deploy["Deploy<br/>$DEPLOY"]:::$DEPLOY
+            classDef success fill:#eaf5ec,stroke:#166534,color:#1d2a2f
+            classDef failure fill:#fbeaea,stroke:#8a2f2f,color:#1d2a2f
+            classDef skipped fill:#f3f3f3,stroke:#999,color:#777,stroke-dasharray:4
+            classDef cancelled fill:#f3f3f3,stroke:#999,color:#777,stroke-dasharray:4
+          \`\`\`
+          EOF
