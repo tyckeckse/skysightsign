@@ -18,11 +18,7 @@ on:
         description: Train the model too
         type: boolean
         default: false
-  schedule:
-    # Cron is UTC: every hour on the hour, 24/7.
-    - cron: "0 0-10,12-23 * * *"
-    # The daily run that also trains; must match TRAIN below.
-    - cron: "0 11 * * *"
+  # Scheduled externally via cron-job.org -> workflow_dispatch.
 
 # Runs share saved state, so they must never overlap.
 concurrency:
@@ -37,7 +33,7 @@ jobs:
     timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
-      TRAIN: ${{ inputs.train || github.event.schedule == '0 11 * * *' }}
+      TRAIN: ${{ inputs.train == true }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
