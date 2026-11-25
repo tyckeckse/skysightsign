@@ -405,7 +405,8 @@
     .label-snoblandat { color: #4338ca; }
 
     .label-icon {
-      display: block;
+      display: inline-block;
+      vertical-align: middle;
       width: 20px;
       height: 20px;
     }
@@ -1042,6 +1043,16 @@
             if (Number.isFinite(row.p_precip)) parts.push("Nederbörd: " + Math.round(row.p_precip * 100) + "%");
             if (row.label) parts.push("Moln: " + displayLabel(row.label));
             if (parts.length) tdLabel.title += " · " + parts.join(" · ");
+          }
+
+          // A moon always means night: show it after the weather icon.
+          if (isNight && shownLabel !== "Natt") {
+            const moon = document.createElement("img");
+            moon.className = "label-icon";
+            moon.src = "icons/yr/" + LABEL_ICONS.Natt + ".svg";
+            moon.alt = LABEL_DISPLAY.Natt;
+            tdLabel.appendChild(moon);
+            tdLabel.title += " · " + LABEL_DISPLAY.Natt;
           }
 
           const tdTemp = document.createElement("td");
