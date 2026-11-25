@@ -182,18 +182,12 @@ def score(
     for day in sorted({p["day"] for p in main}):
         day_pairs = [p for p in main if p["day"] == day]
         by_day.append({"day": day, **_summary(day_pairs), "hours": _hour_rows(day_pairs)})
-    by_sky = {
-        "clear": [p for p in main if p["obs"] <= 12],
-        "mixed": [p for p in main if 12 < p["obs"] < 95],
-        "overcast": [p for p in main if p["obs"] >= 95],
-    }
     return {
         "days": days,
         "generated_at_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "overall": _summary(main),
         "by_day": by_day,
         "by_window": [{"window_h": w, **_summary(pairs)} for w, pairs in by_window.items()],
-        "by_sky": [{"sky": sky, **_summary(pairs)} for sky, pairs in by_sky.items()],
         "issued_from_utc": issued_from.strftime("%Y-%m-%dT%H:%M:%SZ") if issued_from else None,
     }
 
