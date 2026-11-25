@@ -1,5 +1,5 @@
 name: Skysight
-run-name: "Skysight: ${{ inputs.train == true && 'inference + training' || 'inference' }}"
+run-name: "${{ inputs.train == true && 'Inference + training' || 'Inference' }} ${{ github.event_name == 'push' && '(after merge)' || '(scheduled)' }}"
 
 on:
   push:
