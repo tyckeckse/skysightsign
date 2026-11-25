@@ -696,7 +696,9 @@
         zoomControl: true,
         // Zoom with the + and - buttons, so scrolling past the map doesn't zoom it.
         scrollWheelZoom: false,
-        doubleClickZoom: false
+        doubleClickZoom: false,
+        // On touch screens, one finger scrolls the page instead of moving the map.
+        dragging: !window.matchMedia("(pointer: coarse)").matches
       });
       map.attributionControl.setPrefix(false);
 
