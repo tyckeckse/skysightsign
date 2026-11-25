@@ -87,6 +87,7 @@
     .perf-summary { display: flex; gap: 12px; margin: 0 0 14px; flex-wrap: wrap; }
     .perf-card { flex: 1; min-width: 140px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
     .perf-card.win { border-color: var(--accent); }
+    #viewPerf .perf-card.win { border-color: #166534; background: #eaf5ec; }
     .perf-card .big { font-size: 1.8rem; font-weight: 600; }
     .perf-card .small { font-size: 13px; color: var(--muted); }
     .perf-win { font-weight: 600; color: var(--accent); }
@@ -450,7 +451,8 @@
     </section>
     <section id="viewPerf" class="panel" hidden>
       <h2 class="forecast-title">Modell mot Open-Meteo, facit: SMHI Uppsala Flygplats</h2>
-      <p class="perf-note">Medelfel i molnighet (procentenheter), dagtimmar de senaste 30 dagarna. Prognosen låses en timme innan. ”Samma himmel” antar att molnen är som i senaste mätningen.</p>
+      <h3 class="daily-title">Molnighet (senaste 30 dagarna)</h3>
+      <p class="perf-note">Medelfel i molnighet (procentenheter), dagtimmar. Prognosen låses en timme innan.</p>
       <div id="perfStatus" class="forecast-status"></div>
       <div id="perfSummary" class="perf-summary"></div>
       <table class="perf-table" aria-label="Per dag">
@@ -459,22 +461,27 @@
       </table>
       <h3 class="daily-title">Prognosen låst längre innan</h3>
       <table class="perf-table" aria-label="Per tid innan">
-        <thead><tr><th>Innan</th><th>Timmar</th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th><th><span class="label-full">Samma himmel</span><span class="label-short">Samma</span></th></tr></thead>
+        <thead><tr><th>Innan</th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th></tr></thead>
         <tbody id="perfWindow"></tbody>
       </table>
       <h3 class="daily-title">En timme innan, per uppmätt himmel</h3>
       <table class="perf-table" aria-label="Per uppmätt himmel">
-        <thead><tr><th>Himmel</th><th>Timmar</th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th><th><span class="label-full">Samma himmel</span><span class="label-short">Samma</span></th></tr></thead>
+        <thead><tr><th>Himmel</th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th></tr></thead>
         <tbody id="perfSky"></tbody>
       </table>
       <div class="daily-wrap">
-        <h3 class="daily-title">Nederbörd (senaste 7 dagarna)</h3>
-        <p class="perf-note">Andel rätt nederbördstyp (Uppehåll / Regn / Snö / Snöblandat) mot SMHI Rådande väder, dygnet runt.</p>
+        <h3 class="daily-title">Nederbörd (senaste 30 dagarna)</h3>
+        <p class="perf-note">Andel rätt nederbördstyp (Uppehåll / Regn / Snö / Snöblandat) mot SMHI Rådande väder, dygnet runt. Prognosen låses en timme innan.</p>
         <div id="perfPrecipStatus" class="forecast-status"></div>
         <div id="perfPrecipSummary" class="perf-summary"></div>
         <table class="perf-table" aria-label="Nederbörd per dag">
           <thead><tr><th>Dag</th><th><span class="label-full">Uppmätt</span><span class="label-short">Uppm.</span></th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th></tr></thead>
           <tbody id="perfPrecipDay"></tbody>
+        </table>
+        <h3 class="daily-title">Prognosen låst längre innan</h3>
+        <table class="perf-table" aria-label="Nederbörd per tid innan">
+          <thead><tr><th>Innan</th><th><span class="label-full">Skysightsign</span><span class="label-short">Skys.</span></th><th><span class="label-full">Open-Meteo</span><span class="label-short">O-M</span></th><th>SMHI</th></tr></thead>
+          <tbody id="perfPrecipWindow"></tbody>
         </table>
       </div>
     </section>
@@ -1304,7 +1311,7 @@
         const o = p.overall;
         const summary = document.getElementById("perfSummary");
         summary.innerHTML = "";
-        [["Skysightsign", "model_mae"], ["Open-Meteo", "om_mae"], ["SMHI", "smhi_mae"], ["Samma himmel", "same_mae"]].forEach(function (c) {
+        [["Skysightsign", "model_mae"], ["Open-Meteo", "om_mae"], ["SMHI", "smhi_mae"]].forEach(function (c) {
           const mine = o[c[1]];
           const best = lowestMae(o);
           const card = document.createElement("div");
@@ -1389,6 +1396,16 @@
           ? ""
           : "Nederbördsloggen fylls på varje timme och SMHI-observationer dyker upp några timmar senare.";
 
+        function accRow(label, r) {
+          const tr = document.createElement("tr");
+          const accs = PERF_SERIES.map(function (name) { return r[name + "_acc"]; });
+          const best = r.n ? Math.max.apply(null, accs) : null;
+          cell(tr, label);
+          accs.forEach(function (v) { cell(tr, r.n ? fmtNum(v) + " %" : "-", r.n > 0 && v === best); });
+          return tr;
+        }
+        const precipWindowRows = (precip.by_window || []).map(function (r) { return accRow(r.window_h + " h", r); });
+        document.getElementById("perfPrecipWindow").replaceChildren(...precipWindowRows);
         (precip.by_day || []).slice().reverse().forEach(function (r) {
           const dayLabel = fmtDay(r.day);
           const dayRow = document.createElement("tr");
@@ -1442,21 +1459,20 @@
         tr.appendChild(td);
       }
 
-      const MAE_SERIES = ["model", "om", "smhi", "same"];
+      const PERF_SERIES = ["model", "om", "smhi"];
 
       // Lowest mean error among the sources that have one, or null if none do.
       function lowestMae(r) {
-        const values = MAE_SERIES.map(function (name) { return r[name + "_mae"]; }).filter(function (v) { return typeof v === "number"; });
+        const values = PERF_SERIES.map(function (name) { return r[name + "_mae"]; }).filter(function (v) { return typeof v === "number"; });
         return values.length ? Math.min.apply(null, values) : null;
       }
 
-      // Label, number of hours, then the four mean errors with the lowest highlighted.
+      // Label, then the three mean errors with the lowest highlighted.
       function maeRow(label, r) {
         const tr = document.createElement("tr");
         const best = lowestMae(r);
         cell(tr, label);
-        cell(tr, String(r.n));
-        MAE_SERIES.forEach(function (name) {
+        PERF_SERIES.forEach(function (name) {
           const v = r[name + "_mae"];
           cell(tr, fmtNum(v), best !== null && v === best);
         });
