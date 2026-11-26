@@ -323,10 +323,39 @@
       accent-color: var(--accent);
     }
 
+    .forecast-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 8px 0;
+    }
+
     .forecast-title {
       margin: 0 0 8px 0;
       font-size: 15px;
       font-weight: 600;
+    }
+
+    .forecast-head .forecast-title {
+      margin: 0;
+    }
+
+    .current-temp {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(28, 79, 115, 0.08);
+      border: 1px solid rgba(28, 79, 115, 0.25);
+      border-radius: 999px;
+      padding: 2px 9px;
+      white-space: nowrap;
+    }
+
+    .current-temp-time {
+      font-weight: 400;
+      color: var(--muted);
     }
 
     .forecast-status {
@@ -526,7 +555,10 @@
         </div>
       </div>
       <aside class="panel">
-        <h2 class="forecast-title">Uppsala kommande 24h</h2>
+        <div class="forecast-head">
+          <h2 class="forecast-title">Uppsala kommande 24h</h2>
+          <span id="currentTemp" class="current-temp" hidden aria-live="polite"></span>
+        </div>
         <div id="forecastStatus" class="forecast-status">
           <div id="forecastUpdated"></div>
           <div id="forecastNextUpdate"></div>
@@ -579,6 +611,8 @@
       const FORECAST_HOURS = 24;
       const CLASSIFICATION_HOURS = 24;
       const DAILY_FORECAST_DAYS = 7;
+      const CURRENT_TEMP_REFRESH_MS = 10 * 60 * 1000;
+      const CURRENT_TEMP_URL = "https://api.open-meteo.com/v1/forecast?latitude=59.8586&longitude=17.6389&current=temperature_2m&timezone=UTC";
       const PLAY_ICON = "\u25B6";
       const PAUSE_ICON = "\u23F8";
       const DATASETS = {
@@ -629,6 +663,7 @@
       const cloudBtn = document.getElementById("cloudBtn");
       const forecastUpdated = document.getElementById("forecastUpdated");
       const forecastNextUpdate = document.getElementById("forecastNextUpdate");
+      const currentTemp = document.getElementById("currentTemp");
       const forecastBody = document.getElementById("forecastBody");
       const dailyForecastStatus = document.getElementById("dailyForecastStatus");
       const dailyForecastBody = document.getElementById("dailyForecastBody");
@@ -2002,8 +2037,38 @@
       loadFrames().catch(function () {
         timeLabel.textContent = "Fel vid hämtning";
       });
+      async function loadCurrentTemp() {
+        try {
+          const response = await fetch(CURRENT_TEMP_URL, { cache: "no-store" });
+          if (!response.ok) return;
+          const payload = await response.json();
+          const current = payload && payload.current ? payload.current : null;
+          const temp = current ? Number(current.temperature_2m) : NaN;
+          if (!Number.isFinite(temp)) return;
+
+          const timeIso = typeof current.time === "string"
+            ? (current.time.endsWith("Z") ? current.time : current.time + "Z")
+            : "";
+          const timeText = timeIso ? fmtHour(timeIso) : "";
+
+          currentTemp.textContent = "Nu: " + temp.toFixed(1) + "\u00B0C";
+          if (timeText) {
+            const span = document.createElement("span");
+            span.className = "current-temp-time";
+            span.textContent = " (" + timeText + ")";
+            currentTemp.appendChild(span);
+          }
+          currentTemp.title = "Aktuell temperatur i Uppsala (Open-Meteo)";
+          currentTemp.hidden = false;
+        } catch (_) {
+          // Keep the last valid reading (or stay hidden) if the live fetch fails.
+        }
+      }
+
       loadForecastTable();
       loadDailyForecast();
+      loadCurrentTemp();
+      setInterval(loadCurrentTemp, CURRENT_TEMP_REFRESH_MS);
     })();
   </script>
 </body>
